@@ -4,6 +4,7 @@
   --color-coral: #ff5a5f;
   --color-gold: #f5c842;
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-hindi: var(--font-devanagari), var(--font-geist-sans), sans-serif;
 }
 
 @keyframes spin-slow {
@@ -17,4 +18,8 @@
 
 .animate-spin-slow {
   animation: spin-slow 40s linear infinite;
+}
+
+.font-hindi {
+  font-family: var(--font-hindi);
 }
