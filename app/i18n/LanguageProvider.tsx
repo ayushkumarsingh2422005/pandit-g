@@ -7,13 +7,13 @@ import {
   useEffect,
   useState,
 } from "react";
-import { type Locale, translations } from "./translations";
+import { type Locale, type TranslationKeys, translations } from "./translations";
 
 type LanguageContextValue = {
   locale: Locale;
   setLocale: (locale: Locale) => void;
   toggleLocale: () => void;
-  t: (typeof translations)["en"];
+  t: TranslationKeys;
 };
 
 const LanguageContext = createContext<LanguageContextValue | null>(null);
