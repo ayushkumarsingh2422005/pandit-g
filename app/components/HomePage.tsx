@@ -417,6 +417,12 @@ export default function HomePage() {
             </Link>{" "}
             (Digicraft.one)
           </p>
+          <Link
+            href="/privacy"
+            className="text-sm text-gray-500 transition-colors hover:text-coral"
+          >
+            Privacy Policy
+          </Link>
         </div>
       </footer>
     </div>
