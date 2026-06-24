@@ -7,8 +7,12 @@ function requireEnv(name: string): string {
 }
 
 export function getXaiConfig() {
+  const model = process.env.XAI_MODEL ?? "grok-4.3";
+
   return {
     apiKey: requireEnv("XAI_API_KEY"),
-    model: process.env.XAI_MODEL ?? "grok-4.3",
+    model,
+    /** Chat API — used when the user sends an image (vision input). */
+    visionModel: process.env.XAI_VISION_MODEL ?? model,
   };
 }

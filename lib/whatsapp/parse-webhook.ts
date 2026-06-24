@@ -1,4 +1,5 @@
 import type {
+  IncomingAiMessage,
   IncomingTextMessage,
   WhatsAppIncomingMessage,
   WhatsAppStatusUpdate,
@@ -8,11 +9,19 @@ import type {
 export function parseIncomingTextMessages(
   payload: WhatsAppWebhookPayload,
 ): IncomingTextMessage[] {
+  return parseIncomingAiMessages(payload).filter(
+    (message) => !message.imageMediaId,
+  );
+}
+
+export function parseIncomingAiMessages(
+  payload: WhatsAppWebhookPayload,
+): IncomingAiMessage[] {
   if (payload.object !== "whatsapp_business_account" || !payload.entry) {
     return [];
   }
 
-  const messages: IncomingTextMessage[] = [];
+  const messages: IncomingAiMessage[] = [];
 
   for (const entry of payload.entry) {
     for (const change of entry.changes) {
@@ -77,15 +86,30 @@ export function parseIncomingMessageIds(
 function parseMessage(
   message: WhatsAppIncomingMessage,
   contactName?: string,
-): IncomingTextMessage | null {
-  if (!message?.id || message.type !== "text" || !message.text?.body) {
+): IncomingAiMessage | null {
+  if (!message?.id || !message.from) {
     return null;
   }
 
-  return {
-    from: message.from,
-    messageId: message.id,
-    text: message.text.body,
-    contactName,
-  };
+  if (message.type === "text" && message.text?.body) {
+    return {
+      from: message.from,
+      messageId: message.id,
+      text: message.text.body,
+      contactName,
+    };
+  }
+
+  if (message.type === "image" && message.image?.id) {
+    return {
+      from: message.from,
+      messageId: message.id,
+      text: message.image.caption?.trim() ?? "",
+      contactName,
+      imageMediaId: message.image.id,
+      imageMimeType: message.image.mime_type,
+    };
+  }
+
+  return null;
 }

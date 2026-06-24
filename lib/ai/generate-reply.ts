@@ -1,5 +1,5 @@
 import { createXai } from "@ai-sdk/xai";
-import type { ModelMessage } from "ai";
+import type { ModelMessage, UserModelMessage } from "ai";
 import { generateText } from "ai";
 import {
   getConversationHistory,
@@ -9,13 +9,63 @@ import { isDbConfigured } from "@/lib/db/is-configured";
 import { getXaiConfig } from "./config";
 import { buildPanditGSystemPrompt } from "./prompts";
 
-export async function generatePanditGReply(
-  phone: string,
+export type UserImageInput = {
+  data: Uint8Array;
+  mimeType: string;
+};
+
+export type GeneratePanditGReplyInput = {
+  phone: string;
+  userMessage: string;
+  contactName?: string;
+  image?: UserImageInput;
+};
+
+function buildUserModelMessage(
   userMessage: string,
-  contactName?: string,
-): Promise<string> {
-  const { apiKey, model } = getXaiConfig();
+  image?: UserImageInput,
+): UserModelMessage {
+  const trimmed = userMessage.trim();
+  const textForModel = image
+    ? trimmed || "उपयोगकर्ता ने यह फोटो भेजी है — पंडित जी की नज़र से देखकर बताइए।"
+    : trimmed;
+
+  if (!image) {
+    return { role: "user", content: textForModel };
+  }
+
+  return {
+    role: "user",
+    content: [
+      { type: "text", text: textForModel },
+      {
+        type: "file",
+        data: image.data,
+        mediaType: image.mimeType || "image/jpeg",
+      },
+    ],
+  };
+}
+
+function buildStoredUserMessage(userMessage: string, hasImage: boolean): string {
+  const trimmed = userMessage.trim();
+
+  if (hasImage) {
+    return trimmed ? `[फोटो] ${trimmed}` : "[फोटो भेजी]";
+  }
+
+  return trimmed;
+}
+
+export async function generatePanditGReply({
+  phone,
+  userMessage,
+  contactName,
+  image,
+}: GeneratePanditGReplyInput): Promise<string> {
+  const { apiKey, model, visionModel } = getXaiConfig();
   const provider = createXai({ apiKey });
+  const hasImage = Boolean(image);
 
   const history = isDbConfigured()
     ? await getConversationHistory(phone)
@@ -28,14 +78,19 @@ export async function generatePanditGReply(
       role: entry.role,
       content: entry.content,
     })),
-    { role: "user", content: userMessage },
+    buildUserModelMessage(userMessage, image),
   ];
 
+  const languageModel = hasImage
+    ? provider.chat(visionModel)
+    : provider.responses(model);
+
   const { text } = await generateText({
-    model: provider.responses(model),
+    model: languageModel,
     system: buildPanditGSystemPrompt({
       contactName,
       isContinuingConversation,
+      hasImage,
     }),
     messages,
     temperature: 0.88,
@@ -49,7 +104,12 @@ export async function generatePanditGReply(
   }
 
   if (isDbConfigured()) {
-    await saveConversationTurn(phone, userMessage, reply, contactName);
+    await saveConversationTurn(
+      phone,
+      buildStoredUserMessage(userMessage, hasImage),
+      reply,
+      contactName,
+    );
   }
 
   return reply;

@@ -35,6 +35,12 @@ export type WhatsAppIncomingMessage = {
   timestamp: string;
   type: string;
   text?: { body: string };
+  image?: {
+    id: string;
+    mime_type?: string;
+    sha256?: string;
+    caption?: string;
+  };
 };
 
 export type WhatsAppStatusUpdate = {
@@ -49,4 +55,14 @@ export type IncomingTextMessage = {
   messageId: string;
   text: string;
   contactName?: string;
+};
+
+/** Text and/or image message for the AI handler. */
+export type IncomingAiMessage = {
+  from: string;
+  messageId: string;
+  text: string;
+  contactName?: string;
+  imageMediaId?: string;
+  imageMimeType?: string;
 };
