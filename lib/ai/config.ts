@@ -6,9 +6,9 @@ function requireEnv(name: string): string {
   return value;
 }
 
-export function getGroqConfig() {
+export function getXaiConfig() {
   return {
-    apiKey: requireEnv("GROQ_API_KEY"),
-    model: process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile",
+    apiKey: requireEnv("XAI_API_KEY"),
+    model: process.env.XAI_MODEL ?? "grok-4.3",
   };
 }

@@ -1,4 +1,4 @@
-import { generatePanditGReply } from "@/lib/ai/groq";
+import { generatePanditGReply } from "@/lib/ai/generate-reply";
 import { sendTextMessage } from "../client";
 import type { IncomingTextMessage } from "../types";
 
