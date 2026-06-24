@@ -10,7 +10,11 @@ export async function handleAiMessage(message: IncomingTextMessage) {
   let reply: string;
 
   try {
-    reply = await generatePanditGReply(message.text, message.contactName);
+    reply = await generatePanditGReply(
+      message.from,
+      message.text,
+      message.contactName,
+    );
   } catch (error) {
     console.error("[whatsapp ai]", error);
     reply = FALLBACK_REPLY;
