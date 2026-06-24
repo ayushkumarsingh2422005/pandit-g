@@ -7,7 +7,7 @@ import {
 } from "@/lib/db/conversations";
 import { isDbConfigured } from "@/lib/db/is-configured";
 import { getXaiConfig } from "./config";
-import { PANDIT_G_SYSTEM_PROMPT } from "./prompts";
+import { buildPanditGSystemPrompt } from "./prompts";
 
 export async function generatePanditGReply(
   phone: string,
@@ -21,23 +21,24 @@ export async function generatePanditGReply(
     ? await getConversationHistory(phone)
     : [];
 
-  const userContext = contactName
-    ? `Client name: ${contactName}\n\nMessage: ${userMessage}`
-    : userMessage;
+  const isContinuingConversation = history.length > 0;
 
   const messages: ModelMessage[] = [
     ...history.map((entry) => ({
       role: entry.role,
       content: entry.content,
     })),
-    { role: "user", content: userContext },
+    { role: "user", content: userMessage },
   ];
 
   const { text } = await generateText({
     model: provider.responses(model),
-    system: PANDIT_G_SYSTEM_PROMPT,
+    system: buildPanditGSystemPrompt({
+      contactName,
+      isContinuingConversation,
+    }),
     messages,
-    temperature: 0.7,
+    temperature: 0.92,
     maxRetries: 1,
   });
 
