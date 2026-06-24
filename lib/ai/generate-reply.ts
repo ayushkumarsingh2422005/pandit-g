@@ -38,7 +38,7 @@ export async function generatePanditGReply(
       isContinuingConversation,
     }),
     messages,
-    temperature: 0.92,
+    temperature: 0.88,
     maxRetries: 1,
   });
 
