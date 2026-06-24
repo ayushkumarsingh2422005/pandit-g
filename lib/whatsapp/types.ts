@@ -25,7 +25,7 @@ export type WhatsAppChangeValue = {
 };
 
 export type WhatsAppContact = {
-  profile: { name: string };
+  profile?: { name?: string };
   wa_id: string;
 };
 

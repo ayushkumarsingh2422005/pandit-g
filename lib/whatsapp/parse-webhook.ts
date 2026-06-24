@@ -19,7 +19,9 @@ export function parseIncomingTextMessages(
       if (change.field !== "messages") continue;
 
       const value = change.value;
-      const contactName = value.contacts?.[0]?.profile.name;
+      if (!value) continue;
+
+      const contactName = value.contacts?.[0]?.profile?.name;
 
       for (const message of value.messages ?? []) {
         const parsed = parseMessage(message, contactName);
@@ -64,7 +66,7 @@ export function parseIncomingMessageIds(
     for (const change of entry.changes) {
       if (change.field !== "messages") continue;
       for (const message of change.value.messages ?? []) {
-        ids.push(message.id);
+        if (message?.id) ids.push(message.id);
       }
     }
   }
@@ -76,7 +78,7 @@ function parseMessage(
   message: WhatsAppIncomingMessage,
   contactName?: string,
 ): IncomingTextMessage | null {
-  if (message.type !== "text" || !message.text?.body) {
+  if (!message?.id || message.type !== "text" || !message.text?.body) {
     return null;
   }
 
