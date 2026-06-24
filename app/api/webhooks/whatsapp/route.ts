@@ -1,9 +1,14 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
+import { acknowledgeIncomingMessages } from "@/lib/whatsapp/acknowledge";
 import { getWhatsAppConfigOptional } from "@/lib/whatsapp/config";
 import { processWhatsAppWebhook } from "@/lib/whatsapp/process-webhook";
 import type { WhatsAppWebhookPayload } from "@/lib/whatsapp/types";
 
 export const runtime = "nodejs";
+
+// Groq AI + WhatsApp send can take a few seconds — allow up to 60s on Vercel Pro.
+// Hobby plan max is 10s; upgrade to Pro if AI replies time out.
+export const maxDuration = 60;
 
 /**
  * Meta WhatsApp Cloud API — webhook verification (GET)
@@ -36,6 +41,11 @@ export async function GET(request: NextRequest) {
 
 /**
  * Meta WhatsApp Cloud API — incoming messages & status updates (POST)
+ *
+ * Vercel flow:
+ * 1. Mark read + typing immediately (blue ticks, "typing...")
+ * 2. Return 200 to Meta fast
+ * 3. Run AI + reply in background via after()
  */
 export async function POST(request: NextRequest) {
   try {
@@ -45,12 +55,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ status: "ignored" }, { status: 200 });
     }
 
-    const result = await processWhatsAppWebhook(payload);
+    await acknowledgeIncomingMessages(payload);
 
-    return NextResponse.json({ status: "ok", ...result }, { status: 200 });
+    after(async () => {
+      try {
+        await processWhatsAppWebhook(payload);
+      } catch (error) {
+        console.error("[whatsapp webhook]", error);
+      }
+    });
+
+    return NextResponse.json({ status: "ok" }, { status: 200 });
   } catch (error) {
     console.error("[whatsapp webhook]", error);
-    // Always return 200 so Meta does not keep retrying on handled failures
     return NextResponse.json({ status: "error" }, { status: 200 });
   }
 }

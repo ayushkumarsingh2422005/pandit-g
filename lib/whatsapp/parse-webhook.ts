@@ -1,6 +1,7 @@
 import type {
   IncomingTextMessage,
   WhatsAppIncomingMessage,
+  WhatsAppStatusUpdate,
   WhatsAppWebhookPayload,
 } from "./types";
 
@@ -28,6 +29,47 @@ export function parseIncomingTextMessages(
   }
 
   return messages;
+}
+
+export function parseStatusUpdates(
+  payload: WhatsAppWebhookPayload,
+): WhatsAppStatusUpdate[] {
+  if (payload.object !== "whatsapp_business_account" || !payload.entry) {
+    return [];
+  }
+
+  const statuses: WhatsAppStatusUpdate[] = [];
+
+  for (const entry of payload.entry) {
+    for (const change of entry.changes) {
+      if (change.field !== "messages") continue;
+      statuses.push(...(change.value.statuses ?? []));
+    }
+  }
+
+  return statuses;
+}
+
+/** All incoming message IDs — used for read receipts + typing before AI reply. */
+export function parseIncomingMessageIds(
+  payload: WhatsAppWebhookPayload,
+): string[] {
+  if (payload.object !== "whatsapp_business_account" || !payload.entry) {
+    return [];
+  }
+
+  const ids: string[] = [];
+
+  for (const entry of payload.entry) {
+    for (const change of entry.changes) {
+      if (change.field !== "messages") continue;
+      for (const message of change.value.messages ?? []) {
+        ids.push(message.id);
+      }
+    }
+  }
+
+  return ids;
 }
 
 function parseMessage(

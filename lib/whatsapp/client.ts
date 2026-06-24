@@ -5,7 +5,7 @@ type SendTextMessageInput = {
   body: string;
 };
 
-export async function sendTextMessage({ to, body }: SendTextMessageInput) {
+async function postToMessagesApi(body: Record<string, unknown>) {
   const { accessToken, phoneNumberId, apiVersion } = getWhatsAppConfig();
 
   const response = await fetch(
@@ -16,13 +16,7 @@ export async function sendTextMessage({ to, body }: SendTextMessageInput) {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        recipient_type: "individual",
-        to,
-        type: "text",
-        text: { preview_url: false, body },
-      }),
+      body: JSON.stringify(body),
     },
   );
 
@@ -30,9 +24,41 @@ export async function sendTextMessage({ to, body }: SendTextMessageInput) {
 
   if (!response.ok) {
     throw new Error(
-      `WhatsApp send failed (${response.status}): ${JSON.stringify(data)}`,
+      `WhatsApp API failed (${response.status}): ${JSON.stringify(data)}`,
     );
   }
 
   return data;
+}
+
+/**
+ * Mark as read (blue ticks) + typing indicator.
+ * Typing shows for up to ~25 seconds or until sendTextMessage() is called.
+ * @see https://developers.facebook.com/docs/whatsapp/cloud-api/typing-indicators
+ */
+export async function markMessageAsRead(messageId: string) {
+  try {
+    return await postToMessagesApi({
+      messaging_product: "whatsapp",
+      status: "read",
+      message_id: messageId,
+      typing_indicator: { type: "text" },
+    });
+  } catch {
+    return postToMessagesApi({
+      messaging_product: "whatsapp",
+      status: "read",
+      message_id: messageId,
+    });
+  }
+}
+
+export async function sendTextMessage({ to, body }: SendTextMessageInput) {
+  return postToMessagesApi({
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to,
+    type: "text",
+    text: { preview_url: false, body },
+  });
 }
