@@ -21,6 +21,7 @@ export type GeneratePanditGReplyInput = {
   contactName?: string;
   image?: UserImageInput;
   funnelStage?: FunnelStage;
+  sessionMinutesRemaining?: number;
 };
 
 function buildUserModelMessage(
@@ -65,6 +66,7 @@ export async function generatePanditGReply({
   contactName,
   image,
   funnelStage,
+  sessionMinutesRemaining,
 }: GeneratePanditGReplyInput): Promise<string> {
   const { apiKey, model, visionModel } = getXaiConfig();
   const provider = createXai({ apiKey });
@@ -98,6 +100,8 @@ export async function generatePanditGReply({
       isContinuingConversation,
       hasImage,
       isPostReading,
+      isPaidSession: funnelStage === "active" && Boolean(sessionMinutesRemaining),
+      sessionMinutesRemaining,
     }),
     messages,
     temperature: 0.93,

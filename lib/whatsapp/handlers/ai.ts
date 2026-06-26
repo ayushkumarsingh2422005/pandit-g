@@ -2,11 +2,24 @@ import {
   generateErrorReply,
   generateFunnelReply,
 } from "@/lib/ai/generate-funnel-reply";
+import { generatePaymentReply } from "@/lib/ai/generate-payment-reply";
+import type { PaymentReplyType } from "@/lib/ai/generate-payment-reply";
 import { generatePanditGReply } from "@/lib/ai/generate-reply";
 import { saveConversationTurn } from "@/lib/db/conversations";
 import { userProvidedDetails } from "@/lib/funnel/detect-birth-details";
 import { getFunnelReadingDelayMs, sleep } from "@/lib/funnel/config";
 import { resolveFunnelStage } from "@/lib/funnel/state";
+import { getConsultationAccess } from "@/lib/payments/consultation-access";
+import {
+  isPaymentIntent,
+  userClaimsTheyPaid,
+} from "@/lib/payments/payment-intent";
+import { getOrCreateConsultationPaymentLink } from "@/lib/razorpay/create-payment-link";
+import {
+  formatPriceInr,
+  getRazorpayConfig,
+} from "@/lib/razorpay/config";
+import { isRazorpayConfigured } from "@/lib/razorpay/is-configured";
 import { downloadWhatsAppMedia } from "../media";
 import { sendTextMessage } from "../client";
 import type { IncomingAiMessage } from "../types";
@@ -31,6 +44,74 @@ async function persistTurn(
     contactName,
     funnelStage,
   );
+}
+
+function requiresPaidSession(stage: string): boolean {
+  return stage === "reading_delivered" || stage === "active";
+}
+
+async function handlePaidConsultationGate(
+  message: IncomingAiMessage,
+  storedUserMessage: string,
+  stage: "reading_delivered" | "active",
+  image?: { data: Uint8Array; mimeType: string },
+) {
+  const access = await getConsultationAccess(message.from);
+
+  if (access.hasAccess) {
+    const reply = await generatePanditGReply({
+      phone: message.from,
+      userMessage: message.text,
+      contactName: message.contactName,
+      image,
+      funnelStage: "active",
+      sessionMinutesRemaining: access.minutesRemaining,
+    });
+    await sendTextMessage({ to: message.from, body: reply });
+    return;
+  }
+
+  const { pricePaise, sessionMinutes } = getRazorpayConfig();
+  const amountInr = formatPriceInr(pricePaise);
+
+  let paymentUrl = access.pendingPaymentUrl;
+  if (!paymentUrl) {
+    const link = await getOrCreateConsultationPaymentLink(
+      message.from,
+      message.contactName,
+    );
+    paymentUrl = link.shortUrl;
+  }
+
+  let replyType: PaymentReplyType;
+  if (userClaimsTheyPaid(message.text)) {
+    replyType = "claimed_paid_pending";
+  } else if (access.reason === "expired") {
+    replyType = "expired";
+  } else if (stage === "reading_delivered" || isPaymentIntent(message.text)) {
+    replyType = "offer";
+  } else {
+    replyType = "unpaid";
+  }
+
+  const reply = await generatePaymentReply({
+    type: replyType,
+    phone: message.from,
+    userMessage: message.text,
+    contactName: message.contactName,
+    paymentUrl,
+    amountInr,
+    sessionMinutes,
+  });
+
+  await persistTurn(
+    message.from,
+    storedUserMessage,
+    reply,
+    message.contactName,
+    "active",
+  );
+  await sendTextMessage({ to: message.from, body: reply });
 }
 
 /** Funnel + AI handler. Read receipt + typing are sent earlier in the webhook route. */
@@ -117,6 +198,16 @@ export async function handleAiMessage(message: IncomingAiMessage) {
         "reading_delivered",
       );
       await sendTextMessage({ to: message.from, body: reading });
+      return;
+    }
+
+    if (requiresPaidSession(stage) && isRazorpayConfigured()) {
+      await handlePaidConsultationGate(
+        message,
+        storedUserMessage,
+        stage as "reading_delivered" | "active",
+        image,
+      );
       return;
     }
 

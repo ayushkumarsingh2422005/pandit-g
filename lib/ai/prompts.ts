@@ -28,9 +28,17 @@ export function buildPanditGSystemPrompt(options: {
   isContinuingConversation: boolean;
   hasImage?: boolean;
   isPostReading?: boolean;
+  isPaidSession?: boolean;
+  sessionMinutesRemaining?: number;
 }): string {
-  const { contactName, isContinuingConversation, hasImage, isPostReading } =
-    options;
+  const {
+    contactName,
+    isContinuingConversation,
+    hasImage,
+    isPostReading,
+    isPaidSession,
+    sessionMinutesRemaining,
+  } = options;
 
   let prompt = PANDIT_G_BASE_PROMPT;
 
@@ -46,7 +54,14 @@ export function buildPanditGSystemPrompt(options: {
     prompt += `\n\nअभी फोटो आई है — देखकर पंडित की नज़र से विश्लेषण दो।`;
   }
 
-  if (isPostReading) {
+  if (isPaidSession) {
+    prompt += `
+
+━━━ भुगतान किया हुआ सत्र चल रहा है ━━━
+- पूरा व्यक्तिगत मार्गदर्शन दो — यह भुगतान वाला परामर्श है।
+${sessionMinutesRemaining ? `- लगभग ${sessionMinutesRemaining} मिनट बचे हैं — ज़रूरी बातें पहले पूछने दो।` : ""}
+- गहराई से ज्योतिषीय सलाह, उपाय, स्पष्ट हिंदी में।`;
+  } else if (isPostReading) {
     prompt += `
 
 ━━━ गहन परामर्श (membership) ━━━
