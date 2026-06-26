@@ -4,6 +4,7 @@ import { generateText } from "ai";
 import {
   getConversationHistory,
   saveConversationTurn,
+  type FunnelStage,
 } from "@/lib/db/conversations";
 import { isDbConfigured } from "@/lib/db/is-configured";
 import { getXaiConfig } from "./config";
@@ -19,6 +20,7 @@ export type GeneratePanditGReplyInput = {
   userMessage: string;
   contactName?: string;
   image?: UserImageInput;
+  funnelStage?: FunnelStage;
 };
 
 function buildUserModelMessage(
@@ -62,6 +64,7 @@ export async function generatePanditGReply({
   userMessage,
   contactName,
   image,
+  funnelStage,
 }: GeneratePanditGReplyInput): Promise<string> {
   const { apiKey, model, visionModel } = getXaiConfig();
   const provider = createXai({ apiKey });
@@ -85,15 +88,19 @@ export async function generatePanditGReply({
     ? provider.chat(visionModel)
     : provider.responses(model);
 
+  const isPostReading =
+    funnelStage === "reading_delivered" || funnelStage === "active";
+
   const { text } = await generateText({
     model: languageModel,
     system: buildPanditGSystemPrompt({
       contactName,
       isContinuingConversation,
       hasImage,
+      isPostReading,
     }),
     messages,
-    temperature: 0.88,
+    temperature: 0.93,
     maxRetries: 1,
   });
 
@@ -104,11 +111,15 @@ export async function generatePanditGReply({
   }
 
   if (isDbConfigured()) {
+    const nextStage: FunnelStage =
+      funnelStage === "reading_delivered" ? "active" : funnelStage ?? "active";
+
     await saveConversationTurn(
       phone,
       buildStoredUserMessage(userMessage, hasImage),
       reply,
       contactName,
+      nextStage,
     );
   }
 

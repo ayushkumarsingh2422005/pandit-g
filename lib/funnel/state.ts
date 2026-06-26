@@ -1,0 +1,51 @@
+import { hasBirthDetailsInText } from "./detect-birth-details";
+import {
+  getConversationHistory,
+  getConversationFunnelStage,
+  type FunnelStage,
+} from "@/lib/db/conversations";
+import { isDbConfigured } from "@/lib/db/is-configured";
+
+export type { FunnelStage };
+
+function userSharedDetails(content: string): boolean {
+  return content.startsWith("[फोटो") || hasBirthDetailsInText(content);
+}
+
+function inferStageFromHistory(
+  messages: { role: string; content: string }[],
+): FunnelStage {
+  if (messages.length === 0) return "initial";
+
+  const assistantCount = messages.filter((m) => m.role === "assistant").length;
+  if (assistantCount === 0) return "initial";
+
+  let detailsMessageIndex = -1;
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i].role === "user" && userSharedDetails(messages[i].content)) {
+      detailsMessageIndex = i;
+      break;
+    }
+  }
+
+  if (detailsMessageIndex >= 0) {
+    const assistantAfterDetails = messages
+      .slice(detailsMessageIndex + 1)
+      .some((m) => m.role === "assistant");
+    if (assistantAfterDetails) return "active";
+  }
+
+  return "awaiting_details";
+}
+
+export async function resolveFunnelStage(phone: string): Promise<FunnelStage> {
+  if (isDbConfigured()) {
+    const stage = await getConversationFunnelStage(phone);
+    if (stage) return stage;
+
+    const history = await getConversationHistory(phone);
+    return inferStageFromHistory(history);
+  }
+
+  return "initial";
+}

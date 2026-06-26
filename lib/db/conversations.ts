@@ -8,6 +8,13 @@ export type StoredChatMessage = {
   createdAt: Date;
 };
 
+/** Client onboarding funnel stages. */
+export type FunnelStage =
+  | "initial"
+  | "awaiting_details"
+  | "reading_delivered"
+  | "active";
+
 const COLLECTION = "conversations";
 const DEFAULT_HISTORY_LIMIT = 20;
 const DEFAULT_STORED_MESSAGES = 40;
@@ -34,6 +41,18 @@ async function ensureDbReady(): Promise<void> {
   await indexesReady;
 }
 
+export async function getConversationFunnelStage(
+  phone: string,
+): Promise<FunnelStage | null> {
+  await ensureDbReady();
+  const db = await getDb();
+  const doc = await db
+    .collection(COLLECTION)
+    .findOne({ phone }, { projection: { funnelStage: 1 } });
+
+  return (doc?.funnelStage as FunnelStage | undefined) ?? null;
+}
+
 export async function getConversationHistory(
   phone: string,
 ): Promise<StoredChatMessage[]> {
@@ -56,6 +75,7 @@ export async function saveConversationTurn(
   userMessage: string,
   assistantReply: string,
   contactName?: string,
+  funnelStage?: FunnelStage,
 ): Promise<void> {
   await ensureDbReady();
   const db = await getDb();
@@ -65,8 +85,12 @@ export async function saveConversationTurn(
     { role: "assistant", content: assistantReply, createdAt: now },
   ];
 
+  const setFields: Record<string, unknown> = { updatedAt: now };
+  if (contactName) setFields.contactName = contactName;
+  if (funnelStage) setFields.funnelStage = funnelStage;
+
   const update: Record<string, unknown> = {
-    $set: { updatedAt: now },
+    $set: setFields,
     $push: {
       messages: {
         $each: newMessages,
@@ -74,10 +98,6 @@ export async function saveConversationTurn(
       },
     },
   };
-
-  if (contactName) {
-    (update.$set as Record<string, unknown>).contactName = contactName;
-  }
 
   await db.collection(COLLECTION).updateOne({ phone }, update, { upsert: true });
 }
