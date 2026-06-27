@@ -17,6 +17,7 @@ import {
 import { getConsultationPricing } from "@/lib/config/consultation-pricing";
 import { getOrCreateConsultationPaymentLink } from "@/lib/razorpay/create-payment-link";
 import { isRazorpayConfigured } from "@/lib/razorpay/is-configured";
+import { handleConversationModeration } from "@/lib/moderation/handle-moderation";
 import { downloadWhatsAppMedia } from "../media";
 import { sendTextMessage } from "../client";
 import type { IncomingAiMessage } from "../types";
@@ -176,6 +177,13 @@ export async function handleAiMessage(message: IncomingAiMessage) {
 
   const storedUserMessage = buildStoredUserMessage(message.text, hasImage);
   const detailsProvided = userProvidedDetails(message.text, hasImage);
+
+  const moderated = await handleConversationModeration({
+    phone: message.from,
+    text: message.text,
+    skipStrikeCheck: detailsProvided,
+  });
+  if (moderated) return;
 
   try {
     const stage = await resolveFunnelStage(message.from);
