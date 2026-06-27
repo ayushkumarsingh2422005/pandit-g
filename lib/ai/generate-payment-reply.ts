@@ -2,6 +2,7 @@ import { createXai } from "@ai-sdk/xai";
 import { generateText } from "ai";
 import { getConversationHistory } from "@/lib/db/conversations";
 import { isDbConfigured } from "@/lib/db/is-configured";
+import { getConsultationPricing } from "@/lib/config/consultation-pricing";
 import { getXaiConfig } from "./config";
 
 const PANDIT_VOICE = `You are Pandit Devadatta — warm Vedic astrologer on WhatsApp.
@@ -27,12 +28,13 @@ export type GeneratePaymentReplyInput = {
 };
 
 function buildPrompt(input: GeneratePaymentReplyInput): string {
+  const pricing = getConsultationPricing();
   const {
     type,
     contactName,
     paymentUrl,
-    amountInr = "₹151",
-    sessionMinutes = 30,
+    amountInr = pricing.priceInrFormatted,
+    sessionMinutes = pricing.sessionMinutes,
     minutesRemaining,
   } = input;
 

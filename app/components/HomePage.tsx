@@ -15,6 +15,7 @@ import {
 } from "react-icons/hi2";
 import { FaRing, FaWhatsapp } from "react-icons/fa6";
 import { GiCrystalBall, GiPrayerBeads, GiSunRadiations } from "react-icons/gi";
+import { getPublicConsultationPricing } from "@/lib/config/consultation-pricing";
 import { useLanguage } from "../i18n/LanguageProvider";
 import Header from "./Header";
 
@@ -53,6 +54,7 @@ const pricingIcons: IconType[] = [
 export default function HomePage() {
   const { locale, t } = useLanguage();
   const isHindi = locale === "hi";
+  const pricing = getPublicConsultationPricing();
 
   const statLabels = [
     t.stats.peopleHelped,
@@ -294,13 +296,15 @@ export default function HomePage() {
 
             <div className="px-8 py-10 text-center">
               <p className="text-5xl font-bold text-gray-900">
-                ₹151
+                {pricing.priceInrFormatted}
                 <span className="text-2xl font-medium text-gray-500">
                   {" "}
-                  {t.pricing.perMin}
+                  / {pricing.sessionMinutes} {isHindi ? "मिनट" : "min"}
                 </span>
               </p>
-              <p className="mt-3 text-lg text-gray-600">{t.pricing.window}</p>
+              <p className="mt-3 text-lg text-gray-600">
+                {isHindi ? pricing.offerLineHi : pricing.offerLineEn}
+              </p>
 
               <ul className="mt-8 space-y-3 text-left text-sm text-gray-600">
                 {t.pricing.bullets.map((bullet, i) => {

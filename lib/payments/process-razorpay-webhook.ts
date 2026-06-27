@@ -1,8 +1,9 @@
 import type { PaymentRecord } from "@/lib/db/payments";
 import { startConsultationSession } from "@/lib/db/sessions";
+import { getConsultationPricing } from "@/lib/config/consultation-pricing";
 import { generatePaymentReply } from "@/lib/ai/generate-payment-reply";
 import { saveConversationTurn } from "@/lib/db/conversations";
-import { getRazorpayConfig, formatPriceInr } from "@/lib/razorpay/config";
+import { getRazorpayConfig } from "@/lib/razorpay/config";
 import { sendTextMessage } from "@/lib/whatsapp/client";
 
 type RazorpayWebhookPayload = {
@@ -85,6 +86,7 @@ export async function processRazorpayWebhookEvent(
     return;
   }
 
+  const pricing = getConsultationPricing();
   const { sessionMinutes } = getRazorpayConfig();
 
   const session = await startConsultationSession({
@@ -95,7 +97,6 @@ export async function processRazorpayWebhookEvent(
     razorpayPaymentId: paid.razorpayPaymentId,
   });
 
-  const amountInr = formatPriceInr(paid.amountPaise);
   const minutesRemaining = Math.ceil(
     (session.endsAt.getTime() - Date.now()) / 60000,
   );
@@ -105,8 +106,8 @@ export async function processRazorpayWebhookEvent(
     phone: paid.phone,
     userMessage: "भुगतान हो गया",
     contactName: paid.contactName,
-    amountInr,
-    sessionMinutes,
+    amountInr: pricing.priceInrFormatted,
+    sessionMinutes: pricing.sessionMinutes,
     minutesRemaining,
   });
 

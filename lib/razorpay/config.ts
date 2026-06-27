@@ -1,3 +1,5 @@
+import { getConsultationPricing } from "@/lib/config/consultation-pricing";
+
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -7,18 +9,16 @@ function requireEnv(name: string): string {
 }
 
 export function getRazorpayConfig() {
+  const pricing = getConsultationPricing();
+
   return {
     keyId: requireEnv("RAZORPAY_KEY_ID"),
     keySecret: requireEnv("RAZORPAY_KEY_SECRET"),
     webhookSecret: requireEnv("RAZORPAY_WEBHOOK_SECRET"),
-    pricePaise:
-      Number(process.env.CONSULTATION_PRICE_PAISE) > 0
-        ? Number(process.env.CONSULTATION_PRICE_PAISE)
-        : 15100,
-    sessionMinutes:
-      Number(process.env.CONSULTATION_DURATION_MINUTES) > 0
-        ? Number(process.env.CONSULTATION_DURATION_MINUTES)
-        : 30,
+    pricePaise: pricing.pricePaise,
+    priceInr: pricing.priceInr,
+    priceInrFormatted: pricing.priceInrFormatted,
+    sessionMinutes: pricing.sessionMinutes,
     paymentLinkExpirySeconds:
       Number(process.env.PAYMENT_LINK_EXPIRY_SECONDS) > 0
         ? Number(process.env.PAYMENT_LINK_EXPIRY_SECONDS)

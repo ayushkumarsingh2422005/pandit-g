@@ -3,6 +3,7 @@ import type { ModelMessage, UserModelMessage } from "ai";
 import { generateText } from "ai";
 import { getConversationHistory } from "@/lib/db/conversations";
 import { isDbConfigured } from "@/lib/db/is-configured";
+import { getConsultationPricing } from "@/lib/config/consultation-pricing";
 import type { UserImageInput } from "./generate-reply";
 import { getXaiConfig } from "./config";
 
@@ -47,6 +48,9 @@ TASK — Client asked something but you need their data before real guidance:
 }
 
 function buildReadingPrompt(contactName?: string): string {
+  const { priceInrFormatted, sessionMinutes, offerLineHi } =
+    getConsultationPricing();
+
   let prompt = `${PANDIT_VOICE}
 
 TASK — User just shared palm photo OR birth details. You have "finished calculating".
@@ -57,7 +61,7 @@ Write ONE message that:
 3. Touch 2-3 deep life areas they likely relate to (pick naturally, vary each time):
    career blockage, mental stress, family discord, marriage tension, financial worry, inner restlessness.
 4. Make it feel personally accurate — insightful but honest, not medical/legal claims.
-5. Soft close: deeper personal session on WhatsApp (₹151 per 3 min) — one gentle line, not hard sell.
+5. Soft close: mention deeper personal session available (${offerLineHi}) — one gentle line, not hard sell. Do NOT include payment URL here — it will be sent separately.
 3-5 short paragraphs. Do NOT ask for birth details again.`;
 
   if (contactName) {

@@ -14,11 +14,8 @@ import {
   isPaymentIntent,
   userClaimsTheyPaid,
 } from "@/lib/payments/payment-intent";
+import { getConsultationPricing } from "@/lib/config/consultation-pricing";
 import { getOrCreateConsultationPaymentLink } from "@/lib/razorpay/create-payment-link";
-import {
-  formatPriceInr,
-  getRazorpayConfig,
-} from "@/lib/razorpay/config";
 import { isRazorpayConfigured } from "@/lib/razorpay/is-configured";
 import { downloadWhatsAppMedia } from "../media";
 import { sendTextMessage } from "../client";
@@ -71,8 +68,7 @@ async function handlePaidConsultationGate(
     return;
   }
 
-  const { pricePaise, sessionMinutes } = getRazorpayConfig();
-  const amountInr = formatPriceInr(pricePaise);
+  const pricing = getConsultationPricing();
 
   let paymentUrl = access.pendingPaymentUrl;
   if (!paymentUrl) {
@@ -100,8 +96,8 @@ async function handlePaidConsultationGate(
     userMessage: message.text,
     contactName: message.contactName,
     paymentUrl,
-    amountInr,
-    sessionMinutes,
+    amountInr: pricing.priceInrFormatted,
+    sessionMinutes: pricing.sessionMinutes,
   });
 
   await persistTurn(
@@ -112,6 +108,36 @@ async function handlePaidConsultationGate(
     "active",
   );
   await sendTextMessage({ to: message.from, body: reply });
+}
+
+async function sendPaymentOfferAfterReading(
+  message: IncomingAiMessage,
+) {
+  const pricing = getConsultationPricing();
+  const link = await getOrCreateConsultationPaymentLink(
+    message.from,
+    message.contactName,
+  );
+
+  const paymentOffer = await generatePaymentReply({
+    type: "offer",
+    phone: message.from,
+    userMessage: "गहन परामर्श के लिए भुगतान",
+    contactName: message.contactName,
+    paymentUrl: link.shortUrl,
+    amountInr: pricing.priceInrFormatted,
+    sessionMinutes: pricing.sessionMinutes,
+  });
+
+  await saveConversationTurn(
+    message.from,
+    "[भुगतान लिंक भेजा]",
+    paymentOffer,
+    message.contactName,
+    "reading_delivered",
+  );
+
+  await sendTextMessage({ to: message.from, body: paymentOffer });
 }
 
 /** Funnel + AI handler. Read receipt + typing are sent earlier in the webhook route. */
@@ -198,6 +224,10 @@ export async function handleAiMessage(message: IncomingAiMessage) {
         "reading_delivered",
       );
       await sendTextMessage({ to: message.from, body: reading });
+
+      if (isRazorpayConfigured()) {
+        await sendPaymentOfferAfterReading(message);
+      }
       return;
     }
 
