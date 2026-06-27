@@ -6,8 +6,8 @@ import { getConsultationPricing } from "@/lib/config/consultation-pricing";
 import { getXaiConfig } from "./config";
 
 const PANDIT_VOICE = `You are Pandit Devadatta — warm Vedic astrologer on WhatsApp.
-Reply ONLY in Hindi (Devanagari). Use "आप". Indian informal bol-chal — बताइए ना, हाँ हाँ, बिल्कुल.
-Never sound like a robot or copy-paste template. Never say you are AI.`;
+Reply ONLY in Hindi (Devanagari). Use "आप". Warm dignified pandit tone — respectful, not chatty.
+Do NOT overuse "ना" at sentence ends (बताइए ना, कीजिए ना) or repeat "हाँ हाँ". Never sound robotic. Never say you are AI.`;
 
 export type PaymentReplyType =
   | "offer"
@@ -44,7 +44,7 @@ function buildPrompt(input: GeneratePaymentReplyInput): string {
     case "offer":
       prompt += `TASK — User finished free reading. Offer paid consultation:
 - Explain gently that deeper personal guidance needs a paid session (${amountInr} for ${sessionMinutes} minutes on WhatsApp).
-- Include this EXACT payment link on its own line: ${paymentUrl}
+${paymentUrl ? `- Include this EXACT payment link on its own line: ${paymentUrl}` : "- Say payment link will be sent shortly — भुगतान लिंक जल्द भेज रहे हैं."}
 - Warm pandit tone, 3-5 lines. React to what they wrote if anything.`;
       break;
 
@@ -52,8 +52,8 @@ function buildPrompt(input: GeneratePaymentReplyInput): string {
       prompt += `TASK — User is asking for guidance but payment is NOT confirmed yet:
 - First briefly acknowledge their question/concern (show you read it) — do NOT answer the astrology question fully.
 - Tell them naturally that आपका भुगतान अभी तक नहीं मिला / भुगतान की पुष्टि नहीं हुई — say it in fresh words each time.
-- Ask them to complete payment using the link below to start the ${sessionMinutes}-minute session.
-- Include this EXACT payment link on its own line: ${paymentUrl}
+- Do NOT stall with "कुंडली देख रहा हूँ" or "थोड़ा वक्त" — payment is the blocker, say so clearly.
+${paymentUrl ? `- Ask them to complete payment using the link below to start the ${sessionMinutes}-minute session.\n- Include this EXACT payment link on its own line: ${paymentUrl}` : "- Ask them to wait for payment link or try again shortly."}
 - Caring, not rude. 3-5 lines.`;
       break;
 
@@ -61,15 +61,14 @@ function buildPrompt(input: GeneratePaymentReplyInput): string {
       prompt += `TASK — Their paid session time ended:
 - Acknowledge what they wrote.
 - Say session समाप्त हो गया / समय पूरा हो गया — freshly worded.
-- Offer to continue with a new payment (${amountInr}, ${sessionMinutes} min).
-- Include this EXACT payment link on its own line: ${paymentUrl}`;
+${paymentUrl ? `- Offer to continue with a new payment (${amountInr}, ${sessionMinutes} min).\n- Include this EXACT payment link on its own line: ${paymentUrl}` : "- Offer new payment when link is available."}`;
       break;
 
     case "claimed_paid_pending":
       prompt += `TASK — User says they paid but we have NOT received confirmation yet:
 - Politely say भुगतान अभी हमें confirm नहीं हुआ / सिस्टम में नहीं दिखा — vary wording.
 - Ask to wait 1-2 minutes or retry payment if money was deducted.
-- Include payment link again: ${paymentUrl}
+${paymentUrl ? `- Include payment link again: ${paymentUrl}` : "- Payment link unavailable — ask them to message again shortly."}
 - Do NOT start full consultation yet.`;
       break;
 
@@ -85,8 +84,10 @@ function buildPrompt(input: GeneratePaymentReplyInput): string {
     prompt += `\nClient name: ${contactName}.`;
   }
 
-  prompt +=
-    "\nIMPORTANT: Payment URL must appear exactly as given. Do not invent a different URL.";
+  if (paymentUrl) {
+    prompt +=
+      "\nIMPORTANT: Payment URL must appear exactly as given. Do not invent a different URL.";
+  }
 
   return prompt;
 }

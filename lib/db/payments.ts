@@ -110,8 +110,16 @@ export async function markPaymentPaid(input: {
 
   if (!existing) return null;
 
+  if (existing.status === "paid") {
+    await db.collection(COLLECTION).updateOne(
+      { paymentLinkId: existing.paymentLinkId },
+      { $addToSet: { webhookEventIds: input.webhookEventId } },
+    );
+    return null;
+  }
+
   if (existing.webhookEventIds?.includes(input.webhookEventId)) {
-    return existing.status === "paid" ? existing : null;
+    return null;
   }
 
   await db.collection(COLLECTION).updateOne(

@@ -21,8 +21,12 @@ export type ConsultationAccess = {
 export async function getConsultationAccess(
   phone: string,
 ): Promise<ConsultationAccess> {
-  if (!isDbConfigured() || !isRazorpayConfigured()) {
-    return { hasAccess: true, reason: "payment_not_configured" };
+  if (!isDbConfigured()) {
+    return { hasAccess: false, reason: "never_paid" };
+  }
+
+  if (!isRazorpayConfigured()) {
+    return { hasAccess: false, reason: "payment_not_configured" };
   }
 
   const active = await getActiveSession(phone);

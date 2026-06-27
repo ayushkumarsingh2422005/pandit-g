@@ -47,6 +47,23 @@ function requiresPaidSession(stage: string): boolean {
   return stage === "reading_delivered" || stage === "active";
 }
 
+async function resolvePaymentUrl(
+  phone: string,
+  contactName: string | undefined,
+  existingUrl?: string,
+): Promise<string | undefined> {
+  if (existingUrl) return existingUrl;
+  if (!isRazorpayConfigured()) return undefined;
+
+  try {
+    const link = await getOrCreateConsultationPaymentLink(phone, contactName);
+    return link.shortUrl;
+  } catch (error) {
+    console.error("[payment link]", error);
+    return undefined;
+  }
+}
+
 async function handlePaidConsultationGate(
   message: IncomingAiMessage,
   storedUserMessage: string,
@@ -69,15 +86,11 @@ async function handlePaidConsultationGate(
   }
 
   const pricing = getConsultationPricing();
-
-  let paymentUrl = access.pendingPaymentUrl;
-  if (!paymentUrl) {
-    const link = await getOrCreateConsultationPaymentLink(
-      message.from,
-      message.contactName,
-    );
-    paymentUrl = link.shortUrl;
-  }
+  const paymentUrl = await resolvePaymentUrl(
+    message.from,
+    message.contactName,
+    access.pendingPaymentUrl,
+  );
 
   let replyType: PaymentReplyType;
   if (userClaimsTheyPaid(message.text)) {
@@ -110,11 +123,9 @@ async function handlePaidConsultationGate(
   await sendTextMessage({ to: message.from, body: reply });
 }
 
-async function sendPaymentOfferAfterReading(
-  message: IncomingAiMessage,
-) {
+async function sendPaymentOfferAfterReading(message: IncomingAiMessage) {
   const pricing = getConsultationPricing();
-  const link = await getOrCreateConsultationPaymentLink(
+  const paymentUrl = await resolvePaymentUrl(
     message.from,
     message.contactName,
   );
@@ -124,7 +135,7 @@ async function sendPaymentOfferAfterReading(
     phone: message.from,
     userMessage: "गहन परामर्श के लिए भुगतान",
     contactName: message.contactName,
-    paymentUrl: link.shortUrl,
+    paymentUrl,
     amountInr: pricing.priceInrFormatted,
     sessionMinutes: pricing.sessionMinutes,
   });
@@ -224,14 +235,11 @@ export async function handleAiMessage(message: IncomingAiMessage) {
         "reading_delivered",
       );
       await sendTextMessage({ to: message.from, body: reading });
-
-      if (isRazorpayConfigured()) {
-        await sendPaymentOfferAfterReading(message);
-      }
+      await sendPaymentOfferAfterReading(message);
       return;
     }
 
-    if (requiresPaidSession(stage) && isRazorpayConfigured()) {
+    if (requiresPaidSession(stage)) {
       await handlePaidConsultationGate(
         message,
         storedUserMessage,

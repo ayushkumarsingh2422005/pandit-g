@@ -1,10 +1,17 @@
 import type { PaymentRecord } from "@/lib/db/payments";
 import { startConsultationSession } from "@/lib/db/sessions";
 import { getConsultationPricing } from "@/lib/config/consultation-pricing";
-import { generatePaymentReply } from "@/lib/ai/generate-payment-reply";
 import { saveConversationTurn } from "@/lib/db/conversations";
 import { getRazorpayConfig } from "@/lib/razorpay/config";
 import { sendTextMessage } from "@/lib/whatsapp/client";
+
+function buildPaymentSuccessMessage(
+  contactName: string | undefined,
+  sessionMinutes: number,
+): string {
+  const greeting = contactName ? `${contactName} जी, ` : "";
+  return `${greeting}भुगतान मिल गया। आपका ${sessionMinutes} मिनट का परामर्श शुरू हो गया है — अपना सवाल लिखिए।`;
+}
 
 type RazorpayWebhookPayload = {
   event?: string;
@@ -89,7 +96,7 @@ export async function processRazorpayWebhookEvent(
   const pricing = getConsultationPricing();
   const { sessionMinutes } = getRazorpayConfig();
 
-  const session = await startConsultationSession({
+  await startConsultationSession({
     phone: paid.phone,
     durationMinutes: sessionMinutes,
     amountPaise: paid.amountPaise,
@@ -97,19 +104,10 @@ export async function processRazorpayWebhookEvent(
     razorpayPaymentId: paid.razorpayPaymentId,
   });
 
-  const minutesRemaining = Math.ceil(
-    (session.endsAt.getTime() - Date.now()) / 60000,
+  const reply = buildPaymentSuccessMessage(
+    paid.contactName,
+    pricing.sessionMinutes,
   );
-
-  const reply = await generatePaymentReply({
-    type: "success",
-    phone: paid.phone,
-    userMessage: "भुगतान हो गया",
-    contactName: paid.contactName,
-    amountInr: pricing.priceInrFormatted,
-    sessionMinutes: pricing.sessionMinutes,
-    minutesRemaining,
-  });
 
   await saveConversationTurn(
     paid.phone,
