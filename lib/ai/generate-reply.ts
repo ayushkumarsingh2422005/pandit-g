@@ -100,7 +100,7 @@ export async function generatePanditGReply({
       isContinuingConversation,
       hasImage,
       isPostReading,
-      isPaidSession: funnelStage === "active" && Boolean(sessionMinutesRemaining),
+      isPaidSession: funnelStage === "active",
       sessionMinutesRemaining,
     }),
     messages,

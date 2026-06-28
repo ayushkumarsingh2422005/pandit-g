@@ -4,10 +4,7 @@ import { getConversationHistory } from "@/lib/db/conversations";
 import { isDbConfigured } from "@/lib/db/is-configured";
 import { getConsultationPricing } from "@/lib/config/consultation-pricing";
 import { getXaiConfig } from "./config";
-
-const PANDIT_VOICE = `You are Pandit Devadatta — warm Vedic astrologer on WhatsApp.
-Reply ONLY in Hindi (Devanagari). Use "आप". Warm dignified pandit tone — respectful, not chatty.
-Do NOT overuse "ना" at sentence ends (बताइए ना, कीजिए ना) or repeat "हाँ हाँ". Never sound robotic. Never say you are AI.`;
+import { NO_PLANETS_BEFORE_PAYMENT, PANDIT_VOICE } from "./pandit-voice";
 
 export type PaymentReplyType =
   | "offer"
@@ -42,41 +39,48 @@ function buildPrompt(input: GeneratePaymentReplyInput): string {
 
   switch (type) {
     case "offer":
-      prompt += `TASK — User finished free reading. Offer paid consultation:
-- Explain gently that deeper personal guidance needs a paid session (${amountInr} for ${sessionMinutes} minutes on WhatsApp).
-${paymentUrl ? `- Include this EXACT payment link on its own line: ${paymentUrl}` : "- Say payment link will be sent shortly — भुगतान लिंक जल्द भेज रहे हैं."}
-- Warm pandit tone, 3-5 lines. React to what they wrote if anything.`;
+      prompt += `TASK — चरण 3: Payment CTA after free trust reading (problems already described, NO planets yet).
+
+Write ONE message in this spirit (fresh wording each time, do NOT copy verbatim):
+- Reassure: घबराइए मत / चिंता न करें — इन परेशानियों का निश्चित समाधान है।
+- Invite: इन दिक्कतों को खत्म करने, जीवन को सही दिशा देने, और मुझसे सीधे जुड़कर उपाय जानने के लिए अभी परामर्श लें।
+- Price line: ${amountInr} — ${sessionMinutes} मिनट की सीधी WhatsApp बातचीत (पंडित जी से सीधा संवाद).
+${paymentUrl ? `- Put this EXACT payment link on its own line:\n${paymentUrl}` : "- Say payment link will be sent shortly."}
+
+${NO_PLANETS_BEFORE_PAYMENT}
+- 4-6 lines, confident caring tone — not hard sell.`;
       break;
 
     case "unpaid":
-      prompt += `TASK — User is asking for guidance but payment is NOT confirmed yet:
-- First briefly acknowledge their question/concern (show you read it) — do NOT answer the astrology question fully.
-- Tell them naturally that आपका भुगतान अभी तक नहीं मिला / भुगतान की पुष्टि नहीं हुई — say it in fresh words each time.
-- Do NOT stall with "कुंडली देख रहा हूँ" or "थोड़ा वक्त" — payment is the blocker, say so clearly.
-${paymentUrl ? `- Ask them to complete payment using the link below to start the ${sessionMinutes}-minute session.\n- Include this EXACT payment link on its own line: ${paymentUrl}` : "- Ask them to wait for payment link or try again shortly."}
-- Caring, not rude. 3-5 lines.`;
+      prompt += `TASK — User wants guidance but payment is NOT confirmed:
+- Briefly acknowledge their question — do NOT answer astrology fully (no graha/upay yet).
+- Say भुगतान अभी पुष्टि नहीं हुआ — fresh words.
+- Do NOT stall with "कुंडली देख रहा हूँ".
+${paymentUrl ? `- Ask to pay via link for ${sessionMinutes}-minute session:\n${paymentUrl}` : "- Ask to wait for payment link."}
+${NO_PLANETS_BEFORE_PAYMENT}
+- 3-5 lines.`;
       break;
 
     case "expired":
-      prompt += `TASK — Their paid session time ended:
+      prompt += `TASK — Paid session time ended:
 - Acknowledge what they wrote.
-- Say session समाप्त हो गया / समय पूरा हो गया — freshly worded.
-${paymentUrl ? `- Offer to continue with a new payment (${amountInr}, ${sessionMinutes} min).\n- Include this EXACT payment link on its own line: ${paymentUrl}` : "- Offer new payment when link is available."}`;
+- Session समाप्त — offer new ${amountInr} / ${sessionMinutes} min session.
+${paymentUrl ? `- Payment link:\n${paymentUrl}` : "- Payment link coming soon."}`;
       break;
 
     case "claimed_paid_pending":
-      prompt += `TASK — User says they paid but we have NOT received confirmation yet:
-- Politely say भुगतान अभी हमें confirm नहीं हुआ / सिस्टम में नहीं दिखा — vary wording.
-- Ask to wait 1-2 minutes or retry payment if money was deducted.
-${paymentUrl ? `- Include payment link again: ${paymentUrl}` : "- Payment link unavailable — ask them to message again shortly."}
+      prompt += `TASK — User claims they paid but not confirmed:
+- Politely say भुगतान सिस्टम में confirm नहीं हुआ — vary wording.
+- Ask to wait 1-2 minutes or retry if money deducted.
+${paymentUrl ? `- Link again:\n${paymentUrl}` : "- Ask to message again shortly."}
 - Do NOT start full consultation yet.`;
       break;
 
     case "success":
-      prompt += `TASK — Payment just confirmed! Session started (${sessionMinutes} minutes).
-- Warmly confirm भुगतान मिल गया / सत्र शुरू — fresh words.
-- Invite them to ask their real questions now. 2-4 lines.
-- ${minutesRemaining ? `They have ~${minutesRemaining} minutes.` : ""}`;
+      prompt += `TASK — Payment confirmed, session started (${sessionMinutes} min).
+- Confirm दक्षिणा/भुगतान मिला, session शुरू — fresh words.
+- Invite real questions. ${minutesRemaining ? `~${minutesRemaining} min left.` : ""}
+- 2-4 lines.`;
       break;
   }
 
@@ -114,7 +118,7 @@ export async function generatePaymentReply(
     model: provider.responses(model),
     system: buildPrompt(input),
     messages,
-    temperature: 0.93,
+    temperature: 0.85,
     maxRetries: 1,
   });
 

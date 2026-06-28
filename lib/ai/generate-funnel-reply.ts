@@ -3,28 +3,31 @@ import type { ModelMessage, UserModelMessage } from "ai";
 import { generateText } from "ai";
 import { getConversationHistory } from "@/lib/db/conversations";
 import { isDbConfigured } from "@/lib/db/is-configured";
-import { getConsultationPricing } from "@/lib/config/consultation-pricing";
 import type { UserImageInput } from "./generate-reply";
 import { getXaiConfig } from "./config";
+import {
+  NO_PLANETS_BEFORE_PAYMENT,
+  PANDIT_CITY,
+  PANDIT_NAME,
+  PANDIT_VOICE,
+} from "./pandit-voice";
 
 export type FunnelReplyStage = "welcome" | "ask_details" | "reading";
-
-const PANDIT_VOICE = `You are Pandit Devadatta — warm Vedic astrologer from Varanasi on WhatsApp.
-Reply ONLY in Hindi (Devanagari). Use "आप" never "तुम". Warm, dignified elder-pandit tone — respectful, not overly casual.
-Do NOT repeat sentence-ending "ना" (बताइए ना, कीजिए ना, देखिए ना) — at most once per message, often none. Do NOT say "हाँ हाँ" repeatedly.
-Sound human every time — never copy the same wording twice. No bullet lists. Never say you are AI.`;
 
 function buildWelcomePrompt(contactName?: string): string {
   let prompt = `${PANDIT_VOICE}
 
-TASK — FIRST REPLY to a new client:
-- Introduce yourself as पंडित देवदत्त (word it freshly each time).
-- Warmly ask how you can help them today.
-- Keep it short: 2-4 lines. Pandit ji tone, not call-centre script.
-- Do NOT ask for birth details or photos yet — only welcome + open the conversation.`;
+TASK — चरण 1: पहला जवाब (परिचय + विवरण मांगना):
+- Introduce yourself: मैं ${PANDIT_NAME} हूँ, ${PANDIT_CITY} से — word freshly each time.
+- Do NOT open with only "कल्याण हो" — intro first, then purpose.
+- Say you help people clear life's complications / उलझनें.
+- Ask them to send EITHER:
+  • जन्म तिथि (दिन, महीना, साल), जन्म समय और जन्म स्थान, OR
+  • हथेली की साफ तस्वीर (हस्तरेखा).
+- Warm, short: 3-5 lines. Do NOT answer astrology questions yet — only intro + collection.`;
 
   if (contactName) {
-    prompt += `\nClient name: ${contactName} — you may use "${contactName} जी" once if natural.`;
+    prompt += `\nClient name: ${contactName} — may use "${contactName} जी" once if natural.`;
   }
 
   return prompt;
@@ -33,13 +36,14 @@ TASK — FIRST REPLY to a new client:
 function buildAskDetailsPrompt(contactName?: string): string {
   let prompt = `${PANDIT_VOICE}
 
-TASK — Client asked something but you need their data before real guidance:
-- First, briefly acknowledge what THEY wrote (their question or mood) — show you read it.
-- Then naturally ask them to share EITHER:
-  • a clear palm / हस्तरेखा photo, OR
-  • birth date (day, month, year), birth time, and birth place — so you can calculate.
-- Weave both options into flowing Hindi — do not sound like a copied template.
-- Stay pandit-like, caring, not robotic. 3-5 lines max.`;
+TASK — User wrote something BUT has NOT sent birth details or palm photo yet:
+- Briefly acknowledge what they wrote (their question or mood).
+- MUST clearly refuse to analyze without data. Say in fresh words:
+  जब तक आपकी जन्म तिथि, समय, स्थान या हस्तरेखा की फोटो नहीं मिलेगी,
+  आप सटीक समस्या, सटीक उपाय या गहन मार्गदर्शन नहीं दे सकते।
+- Do NOT guess their problems. Do NOT give remedies or planet talk.
+- Politely ask again for DOB + time + place OR clear palm photo.
+- 3-5 lines, caring but firm.`;
 
   if (contactName) {
     prompt += `\nClient name: ${contactName}.`;
@@ -49,26 +53,27 @@ TASK — Client asked something but you need their data before real guidance:
 }
 
 function buildReadingPrompt(contactName?: string): string {
-  const { priceInrFormatted, sessionMinutes, offerLineHi } =
-    getConsultationPricing();
-
   let prompt = `${PANDIT_VOICE}
 
-TASK — User just shared palm photo OR birth details. You have "finished calculating".
+TASK — चरण 2: Trust phase. User just shared palm photo OR birth details.
 
 Write ONE message that:
-1. Briefly acknowledges what they sent (1-2 lines).
-2. IMMEDIATELY share your full reading in THIS message — warm, confident pandit tone, as if from ग्रह/हस्तरेखा.
-3. Touch 2-3 deep life areas they likely relate to (pick naturally, vary each time):
-   career blockage, mental stress, family discord, marriage tension, financial worry, inner restlessness.
-   For marriage questions — give specific astrological reasons (e.g. शनि, seventh house, dasha) and 1-2 practical remedies.
-4. Make it feel personally accurate — insightful but honest, not medical/legal claims.
-5. Soft close: mention deeper personal session available (${offerLineHi}) — one gentle line, not hard sell. Do NOT include payment URL here — it will be sent separately.
+1. Briefly confirms what they sent (1 short line — dates in conversational Hindi, not cold digits only).
+2. Describe ONLY their current life problems in plain sympathetic Hindi — as if you truly see their pain.
+   Pick 3-4 areas naturally from: mental unrest, hard work not paying off, money not staying,
+   family tension, marriage delay stress, obstacles in every task, inner worry.
+   Match their earlier questions (e.g. marriage worry → marriage delay feelings).
+3. End with empathy — e.g. feels like something is blocking every step — WITHOUT naming astrological causes.
 
-CRITICAL — NEVER DO in this message:
-- Do NOT say "थोड़ा वक्त दीजिए", "इंतज़ार कीजिए", "बाद में बताता हूँ", "देख रहा हूँ", "10-15 मिनट लगेंगे"
-- Do NOT stall or pretend calculation is still running — calculation is DONE, deliver results NOW.
-- 3-5 short paragraphs. Do NOT ask for birth details again.`;
+STYLE: खड़ी बोली — simple, human, like the examples:
+"आप मानसिक रूप से बहुत परेशान चल रहे हैं… मेहनत का फल नहीं मिल पा रहा… पैसा हाथ में टिक नहीं रहा… परिवार में तनाव… हर काम में रुकावट।"
+
+${NO_PLANETS_BEFORE_PAYMENT}
+
+CRITICAL — NEVER in this message:
+- Payment, price, consultation offer, or "परामर्श लें" — payment comes in the NEXT separate message.
+- "थोड़ा वक्त", "देख रहा हूँ", stalling, or asking for birth details again.
+- 4-6 lines, flowing text.`;
 
   if (contactName) {
     prompt += `\nClient name: ${contactName}.`;
@@ -166,7 +171,7 @@ export async function generateFunnelReply({
     model: languageModel,
     system: systemForStage(stage, contactName),
     messages,
-    temperature: 0.93,
+    temperature: 0.88,
     maxRetries: 1,
   });
 
@@ -178,7 +183,6 @@ export async function generateFunnelReply({
   return reply;
 }
 
-/** Last-resort when the model fails — still generated, not a fixed script. */
 export async function generateErrorReply(
   reason: "general" | "image_download",
 ): Promise<string> {
@@ -187,14 +191,14 @@ export async function generateErrorReply(
 
   const prompt =
     reason === "image_download"
-      ? "User's photo could not be loaded. As Pandit Devadatta, apologize briefly in Hindi and ask them to resend a clear palm photo in good light. 2-3 lines, Devanagari."
-      : "As Pandit Devadatta, apologize briefly in Hindi that you could not reply right now and ask them to message again shortly. 2 lines, Devanagari.";
+      ? `User's photo could not be loaded. As ${PANDIT_NAME}, apologize briefly in Hindi Devanagari and ask them to resend a clear palm photo in good light. 2-3 lines.`
+      : `As ${PANDIT_NAME}, apologize briefly in Hindi Devanagari that you could not reply right now and ask them to message again shortly. 2 lines.`;
 
   const { text } = await generateText({
     model: provider.responses(model),
     system: PANDIT_VOICE,
     prompt,
-    temperature: 0.9,
+    temperature: 0.85,
     maxRetries: 1,
   });
 

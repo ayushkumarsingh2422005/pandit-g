@@ -7,10 +7,10 @@ import { sendTextMessage } from "@/lib/whatsapp/client";
 
 function buildPaymentSuccessMessage(
   contactName: string | undefined,
-  sessionMinutes: number,
+  _sessionMinutes: number,
 ): string {
   const greeting = contactName ? `${contactName} जी, ` : "";
-  return `${greeting}भुगतान मिल गया। आपका ${sessionMinutes} मिनट का परामर्श शुरू हो गया है — अपना सवाल लिखिए।`;
+  return `${greeting}दक्षिणा प्राप्त हुई। चलिए अब बात करते हैं कि इन रुकावटों की वजह क्या है और इन्हें दूर करने के लिए आपको कौन से आसान और अचूक उपाय करने हैं — अपना सवाल लिखिए।`;
 }
 
 type RazorpayWebhookPayload = {
