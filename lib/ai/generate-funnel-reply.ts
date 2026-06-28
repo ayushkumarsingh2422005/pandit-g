@@ -5,6 +5,7 @@ import { getConversationHistory } from "@/lib/db/conversations";
 import { isDbConfigured } from "@/lib/db/is-configured";
 import type { UserImageInput } from "./generate-reply";
 import { getXaiConfig } from "./config";
+import { normalizeReplyNumerals } from "./normalize-numerals";
 import {
   NO_PLANETS_BEFORE_PAYMENT,
   PANDIT_CITY,
@@ -58,7 +59,7 @@ function buildReadingPrompt(contactName?: string): string {
 TASK — चरण 2: Trust phase. User just shared palm photo OR birth details.
 
 Write ONE message that:
-1. Briefly confirms what they sent (1 short line — dates in conversational Hindi, not cold digits only).
+1. Briefly confirms what they sent (1 short line — dates/times in conversational Hindi with Arabic digits: 24, 1991, 12 baje — not २४, १९९१).
 2. Describe ONLY their current life problems in plain sympathetic Hindi — as if you truly see their pain.
    Pick 3-4 areas naturally from: mental unrest, hard work not paying off, money not staying,
    family tension, marriage delay stress, obstacles in every task, inner worry.
@@ -180,7 +181,7 @@ export async function generateFunnelReply({
     throw new Error(`Empty funnel reply for stage: ${stage}`);
   }
 
-  return reply;
+  return normalizeReplyNumerals(reply);
 }
 
 export async function generateErrorReply(
@@ -202,5 +203,7 @@ export async function generateErrorReply(
     maxRetries: 1,
   });
 
-  return text.trim() || "🙏 कृपया थोड़ी देर बाद फिर लिखिए।";
+  return normalizeReplyNumerals(
+    text.trim() || "🙏 कृपया थोड़ी देर बाद फिर लिखिए।",
+  );
 }

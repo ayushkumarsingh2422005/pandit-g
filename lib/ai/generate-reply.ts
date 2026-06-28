@@ -8,6 +8,7 @@ import {
 } from "@/lib/db/conversations";
 import { isDbConfigured } from "@/lib/db/is-configured";
 import { getXaiConfig } from "./config";
+import { normalizeReplyNumerals } from "./normalize-numerals";
 import { buildPanditGSystemPrompt } from "./prompts";
 
 export type UserImageInput = {
@@ -127,5 +128,5 @@ export async function generatePanditGReply({
     );
   }
 
-  return reply;
+  return normalizeReplyNumerals(reply);
 }

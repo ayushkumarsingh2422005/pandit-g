@@ -4,6 +4,7 @@ import { getConversationHistory } from "@/lib/db/conversations";
 import { isDbConfigured } from "@/lib/db/is-configured";
 import { getConsultationPricing } from "@/lib/config/consultation-pricing";
 import { getXaiConfig } from "./config";
+import { normalizeReplyNumerals } from "./normalize-numerals";
 import { NO_PLANETS_BEFORE_PAYMENT, PANDIT_VOICE } from "./pandit-voice";
 
 export type PaymentReplyType =
@@ -128,8 +129,8 @@ export async function generatePaymentReply(
   }
 
   if (input.paymentUrl && !reply.includes(input.paymentUrl)) {
-    return `${reply}\n\n${input.paymentUrl}`;
+    return normalizeReplyNumerals(`${reply}\n\n${input.paymentUrl}`);
   }
 
-  return reply;
+  return normalizeReplyNumerals(reply);
 }
