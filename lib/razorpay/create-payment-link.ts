@@ -40,7 +40,7 @@ export async function getOrCreateConsultationPaymentLink(
   const link = await razorpay.paymentLink.create({
     amount: pricePaise,
     currency: "INR",
-    description: `देवता जोशी — WhatsApp परामर्श (${sessionMinutes} मिनट)`,
+    description: `देवदत्त जोशी — WhatsApp परामर्श (${sessionMinutes} मिनट)`,
     customer: {
       contact: formatWhatsAppContact(phone),
       name: contactName || undefined,
