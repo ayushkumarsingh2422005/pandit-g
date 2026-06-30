@@ -1,4 +1,5 @@
 import type { FunnelStage, StoredChatMessage } from "./conversations";
+import { createStoredMessage } from "./conversations";
 import { getDb } from "./mongodb";
 import { isDbConfigured } from "./is-configured";
 import type { PaymentRecord } from "./payments";
@@ -14,8 +15,16 @@ export type ConversationListItem = {
   lastMessage?: string;
 };
 
+export type AdminMessage = {
+  id: string;
+  role: string;
+  content: string;
+  createdAt: string;
+  editedAt?: string;
+};
+
 export type ConversationDetail = ConversationListItem & {
-  messages: { role: string; content: string; createdAt: string }[];
+  messages: AdminMessage[];
   birthProfile?: Record<string, unknown>;
   abuseStrikes?: number;
   blockedAt?: string;
@@ -38,6 +47,7 @@ const PAYMENTS = "payments";
 
 export async function listConversations(options?: {
   search?: string;
+  blocked?: boolean;
   limit?: number;
 }): Promise<ConversationListItem[]> {
   if (!isDbConfigured()) return [];
@@ -46,13 +56,34 @@ export async function listConversations(options?: {
   const limit = options?.limit ?? 100;
   const filter: Record<string, unknown> = {};
 
+  if (options?.blocked === true) {
+    filter.blocked = true;
+  } else if (options?.blocked === false) {
+    filter.blocked = { $ne: true };
+  }
+
   if (options?.search?.trim()) {
     const q = options.search.trim();
-    filter.$or = [
-      { phone: { $regex: q, $options: "i" } },
-      { clientName: { $regex: q, $options: "i" } },
-      { contactName: { $regex: q, $options: "i" } },
-    ];
+    const searchClause = {
+      $or: [
+        { phone: { $regex: q, $options: "i" } },
+        { clientName: { $regex: q, $options: "i" } },
+        { contactName: { $regex: q, $options: "i" } },
+      ],
+    };
+    if (Object.keys(filter).length > 0) {
+      filter.$and = [searchClause];
+      delete filter.blocked;
+      if (options?.blocked === true) {
+        (filter.$and as Record<string, unknown>[]).unshift({ blocked: true });
+      } else if (options?.blocked === false) {
+        (filter.$and as Record<string, unknown>[]).unshift({
+          blocked: { $ne: true },
+        });
+      }
+    } else {
+      Object.assign(filter, searchClause);
+    }
   }
 
   const docs = await db
@@ -91,11 +122,9 @@ export async function getConversationDetail(
   const doc = await db.collection(CONVERSATIONS).findOne({ phone });
   if (!doc) return null;
 
-  const messages = ((doc.messages as StoredChatMessage[]) ?? []).map((m) => ({
-    role: m.role,
-    content: m.content,
-    createdAt: new Date(m.createdAt).toISOString(),
-  }));
+  const messages = mapStoredMessages(
+    (doc.messages as StoredChatMessage[]) ?? [],
+  );
 
   const last = messages[messages.length - 1];
 
@@ -138,11 +167,7 @@ export async function appendAdminOutboundMessage(
 
   const db = await getDb();
   const now = new Date();
-  const entry: StoredChatMessage = {
-    role: "assistant",
-    content: body,
-    createdAt: now,
-  };
+  const entry = createStoredMessage("assistant", body, now);
 
   await db.collection(CONVERSATIONS).updateOne(
     { phone },
@@ -186,4 +211,69 @@ export async function listPayments(limit = 100): Promise<PaymentListItem[]> {
         : undefined,
     };
   });
+}
+
+function mapStoredMessages(messages: StoredChatMessage[]): AdminMessage[] {
+  return messages.map((m, index) => ({
+    id: m.id ?? `legacy-${index}`,
+    role: m.role,
+    content: m.content,
+    createdAt: new Date(m.createdAt).toISOString(),
+    editedAt: m.editedAt ? new Date(m.editedAt).toISOString() : undefined,
+  }));
+}
+
+export async function editConversationMessage(
+  phone: string,
+  messageId: string,
+  content: string,
+): Promise<boolean> {
+  if (!isDbConfigured()) return false;
+
+  const db = await getDb();
+  const doc = await db.collection(CONVERSATIONS).findOne({ phone });
+  if (!doc?.messages) return false;
+
+  const messages = doc.messages as StoredChatMessage[];
+  const index = messages.findIndex(
+    (m, i) => (m.id ?? `legacy-${i}`) === messageId,
+  );
+  if (index < 0) return false;
+
+  const now = new Date();
+  messages[index] = {
+    ...messages[index],
+    id: messages[index].id ?? messageId,
+    content: content.trim(),
+    editedAt: now,
+  };
+
+  await db.collection(CONVERSATIONS).updateOne(
+    { phone },
+    { $set: { messages, updatedAt: now } },
+  );
+  return true;
+}
+
+export async function deleteConversationMessage(
+  phone: string,
+  messageId: string,
+): Promise<boolean> {
+  if (!isDbConfigured()) return false;
+
+  const db = await getDb();
+  const doc = await db.collection(CONVERSATIONS).findOne({ phone });
+  if (!doc?.messages) return false;
+
+  const messages = doc.messages as StoredChatMessage[];
+  const next = messages.filter(
+    (m, i) => (m.id ?? `legacy-${i}`) !== messageId,
+  );
+  if (next.length === messages.length) return false;
+
+  await db.collection(CONVERSATIONS).updateOne(
+    { phone },
+    { $set: { messages: next, updatedAt: new Date() } },
+  );
+  return true;
 }

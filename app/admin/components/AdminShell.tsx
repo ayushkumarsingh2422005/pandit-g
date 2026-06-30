@@ -9,6 +9,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [search, setSearch] = useState("");
+  const [listFilter, setListFilter] = useState<"all" | "blocked">("all");
 
   const selectedPhone = useMemo(() => {
     const match = pathname.match(/^\/admin\/chats\/(.+)$/);
@@ -111,6 +112,32 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
+        {/* Filter tabs */}
+        <div className="flex shrink-0 gap-2 border-b border-[#222d34] px-3 py-2">
+          <button
+            type="button"
+            onClick={() => setListFilter("all")}
+            className={`rounded-full px-3 py-1 text-xs ${
+              listFilter === "all"
+                ? "bg-[#00a884] text-white"
+                : "bg-[#202c33] text-[#8696a0] hover:text-[#e9edef]"
+            }`}
+          >
+            All chats
+          </button>
+          <button
+            type="button"
+            onClick={() => setListFilter("blocked")}
+            className={`rounded-full px-3 py-1 text-xs ${
+              listFilter === "blocked"
+                ? "bg-red-600 text-white"
+                : "bg-[#202c33] text-[#8696a0] hover:text-[#e9edef]"
+            }`}
+          >
+            Blocked
+          </button>
+        </div>
+
         {/* Chats label when on payments */}
         {isPayments ? (
           <div className="shrink-0 px-4 py-2 text-xs text-[#8696a0]">
@@ -120,7 +147,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           </div>
         ) : null}
 
-        <ChatListPanel selectedPhone={selectedPhone} search={search} />
+        <ChatListPanel
+          selectedPhone={selectedPhone}
+          search={search}
+          blockedOnly={listFilter === "blocked"}
+        />
       </aside>
 
       {/* Right panel — chat / payments / empty */}

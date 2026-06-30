@@ -3,6 +3,8 @@ import { isAdminRequest, unauthorizedResponse } from "@/lib/admin/auth";
 import {
   appendAdminOutboundMessage,
   clearConversation,
+  deleteConversationMessage,
+  editConversationMessage,
   getConversationDetail,
 } from "@/lib/db/admin";
 import {
@@ -47,7 +49,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
   const { phone: encoded } = await context.params;
   const phone = decodePhone(encoded);
 
-  let body: { action?: string; message?: string; reason?: string };
+  let body: {
+    action?: string;
+    message?: string;
+    reason?: string;
+    messageId?: string;
+    content?: string;
+  };
   try {
     body = await request.json();
   } catch {
@@ -82,6 +90,34 @@ export async function POST(request: NextRequest, context: RouteContext) {
   if (action === "unblock") {
     await unblockConversation(phone);
     return Response.json({ ok: true, blocked: false });
+  }
+
+  if (action === "edit_message") {
+    const messageId = body.messageId?.trim();
+    const content = body.content?.trim();
+    if (!messageId || !content) {
+      return Response.json(
+        { error: "messageId and content required" },
+        { status: 400 },
+      );
+    }
+    const ok = await editConversationMessage(phone, messageId, content);
+    if (!ok) {
+      return Response.json({ error: "Message not found" }, { status: 404 });
+    }
+    return Response.json({ ok: true });
+  }
+
+  if (action === "delete_message") {
+    const messageId = body.messageId?.trim();
+    if (!messageId) {
+      return Response.json({ error: "messageId required" }, { status: 400 });
+    }
+    const ok = await deleteConversationMessage(phone, messageId);
+    if (!ok) {
+      return Response.json({ error: "Message not found" }, { status: 404 });
+    }
+    return Response.json({ ok: true });
   }
 
   return Response.json({ error: "Unknown action" }, { status: 400 });

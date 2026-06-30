@@ -1,12 +1,18 @@
 import {
   blockConversation,
   getAbuseStrikeThreshold,
+  getRecentUserMessageTexts,
   incrementAbuseStrike,
   isConversationBlocked,
+  recordInboundMessage,
 } from "@/lib/db/conversation-moderation";
+import type { FunnelStage } from "@/lib/db/conversations";
 import { sendTextMessage } from "@/lib/whatsapp/client";
 import { BLOCKED_CONVERSATION_MESSAGE } from "./block-message";
-import { detectAbuseSeverity } from "./detect-abuse";
+import {
+  detectViolationsAsync,
+  violationToBlockReason,
+} from "./detect-violations";
 
 export async function sendBlockedMessage(to: string): Promise<void> {
   await sendTextMessage({ to, body: BLOCKED_CONVERSATION_MESSAGE });
@@ -18,32 +24,53 @@ export async function sendBlockedMessage(to: string): Promise<void> {
 export async function handleConversationModeration(input: {
   phone: string;
   text: string;
-  skipStrikeCheck?: boolean;
+  hasMedia?: boolean;
+  funnelStage?: FunnelStage | null;
+  /** Skip off-topic/repetitive checks when user sends birth details or palm photo. */
+  skipFlowViolationCheck?: boolean;
 }): Promise<boolean> {
-  const { phone, text, skipStrikeCheck = false } = input;
+  const {
+    phone,
+    text,
+    hasMedia = false,
+    funnelStage,
+    skipFlowViolationCheck = false,
+  } = input;
 
   if (await isConversationBlocked(phone)) {
     await sendBlockedMessage(phone);
     return true;
   }
 
-  if (skipStrikeCheck) return false;
+  const recentInboundAt = await recordInboundMessage(phone);
+  const recentUserTexts = await getRecentUserMessageTexts(phone);
 
-  const severity = detectAbuseSeverity(text);
+  const { violation, agentReason } = await detectViolationsAsync({
+    text,
+    recentUserTexts,
+    recentInboundAt,
+    hasMedia,
+    funnelStage,
+    skipFlowViolationCheck,
+  });
 
-  if (severity === "severe") {
-    await blockConversation(phone, "severe_abuse");
+  if (!violation) return false;
+
+  if (agentReason) {
+    console.info(`[moderation] ${phone}: ${violation.kind} — ${agentReason}`);
+  }
+
+  if (violation.immediateBlock) {
+    await blockConversation(phone, violationToBlockReason(violation.kind));
     await sendBlockedMessage(phone);
     return true;
   }
 
-  if (severity === "mild") {
-    const strikes = await incrementAbuseStrike(phone);
-    if (strikes >= getAbuseStrikeThreshold()) {
-      await blockConversation(phone, "repeated_abuse");
-      await sendBlockedMessage(phone);
-      return true;
-    }
+  const strikes = await incrementAbuseStrike(phone);
+  if (strikes >= getAbuseStrikeThreshold()) {
+    await blockConversation(phone, violationToBlockReason(violation.kind));
+    await sendBlockedMessage(phone);
+    return true;
   }
 
   return false;

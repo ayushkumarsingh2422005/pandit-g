@@ -3,13 +3,22 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-type Message = { role: string; content: string; createdAt: string };
+type Message = {
+  id: string;
+  role: string;
+  content: string;
+  createdAt: string;
+  editedAt?: string;
+};
 
 type Conversation = {
   phone: string;
   clientName?: string;
   funnelStage?: string;
   blocked: boolean;
+  blockReason?: string;
+  abuseStrikes?: number;
+  blockedAt?: string;
   messages: Message[];
 };
 
@@ -18,6 +27,11 @@ function formatMsgTime(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatBlockReason(reason?: string): string {
+  if (!reason) return "blocked";
+  return reason.replace(/_/g, " ");
 }
 
 type Props = { phone: string };
@@ -32,6 +46,8 @@ export function ChatDetailPanel({ phone }: Props) {
   const [customMsg, setCustomMsg] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
   const [status, setStatus] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -92,8 +108,14 @@ export function ChatDetailPanel({ phone }: Props) {
     }
   }
 
-  async function clearChat() {
-    if (!confirm(`Delete all data for ${phone}?`)) return;
+  async function deleteChat() {
+    if (
+      !confirm(
+        `Delete entire chat for ${phone}? This clears all messages and resets the AI context.`,
+      )
+    ) {
+      return;
+    }
     setActionLoading(true);
     try {
       const res = await fetch(`/api/admin/conversations/${encoded}`, {
@@ -106,6 +128,21 @@ export function ChatDetailPanel({ phone }: Props) {
     } finally {
       setActionLoading(false);
     }
+  }
+
+  async function saveEdit(messageId: string) {
+    const content = editDraft.trim();
+    if (!content) return;
+    const ok = await runAction("edit_message", { messageId, content });
+    if (ok) {
+      setEditingId(null);
+      setEditDraft("");
+    }
+  }
+
+  async function deleteMessage(messageId: string) {
+    if (!confirm("Delete this message from chat history?")) return;
+    await runAction("delete_message", { messageId });
   }
 
   if (loading) {
@@ -128,10 +165,13 @@ export function ChatDetailPanel({ phone }: Props) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Chat header — WhatsApp style */}
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-[#222d34] bg-[#202c33] px-4 py-2">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#6b7b85] text-sm text-white">
+          <div
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm text-white ${
+              conversation.blocked ? "bg-red-900/60" : "bg-[#6b7b85]"
+            }`}
+          >
             {(conversation.clientName || phone).slice(0, 1).toUpperCase()}
           </div>
           <div className="min-w-0">
@@ -143,7 +183,13 @@ export function ChatDetailPanel({ phone }: Props) {
               {conversation.funnelStage
                 ? ` · ${conversation.funnelStage}`
                 : ""}
-              {conversation.blocked ? " · blocked" : ""}
+              {conversation.blocked
+                ? ` · ${formatBlockReason(conversation.blockReason)}`
+                : ""}
+              {typeof conversation.abuseStrikes === "number" &&
+              conversation.abuseStrikes > 0
+                ? ` · ${conversation.abuseStrikes} strike(s)`
+                : ""}
             </p>
           </div>
         </div>
@@ -170,46 +216,136 @@ export function ChatDetailPanel({ phone }: Props) {
           <button
             type="button"
             disabled={actionLoading}
-            onClick={clearChat}
+            onClick={deleteChat}
             className="rounded px-3 py-1.5 text-xs text-[#8696a0] hover:bg-[#2a3942] hover:text-[#e9edef]"
           >
-            Clear
+            Delete chat
           </button>
         </div>
       </header>
 
-      {/* Messages */}
-      <div className="admin-chat-bg min-h-0 flex-1 overflow-y-auto px-[6%] py-3">
+      <div
+        className="admin-chat-bg min-h-0 flex-1 overflow-y-auto px-[6%] py-3"
+      >
         <div className="mx-auto flex max-w-3xl flex-col gap-1">
           {conversation.messages.length === 0 ? (
             <p className="py-12 text-center text-sm text-[#8696a0]">
               No messages yet
             </p>
           ) : (
-            conversation.messages.map((msg, i) => {
+            conversation.messages.map((msg) => {
               const isUser = msg.role === "user";
+              const isEditing = editingId === msg.id;
+
               return (
                 <div
-                  key={`${msg.createdAt}-${i}`}
-                  className={`flex ${isUser ? "justify-start" : "justify-end"}`}
+                  key={msg.id}
+                  className={`group flex ${isUser ? "justify-start" : "justify-end"}`}
                 >
-                  <div
-                    className={`relative max-w-[65%] rounded-lg px-2 py-1.5 shadow-sm ${
-                      isUser
-                        ? "rounded-tl-none bg-[#202c33] text-[#e9edef]"
-                        : "rounded-tr-none bg-[#005c4b] text-[#e9edef]"
-                    }`}
-                    style={{
-                      borderTopLeftRadius: isUser ? 0 : undefined,
-                      borderTopRightRadius: isUser ? undefined : 0,
-                    }}
-                  >
-                    <p className="font-hindi whitespace-pre-wrap pr-12 text-[14.2px] leading-[19px]">
-                      {msg.content}
-                    </p>
-                    <span className="absolute bottom-1 right-2 text-[11px] text-[#8696a0]">
-                      {formatMsgTime(msg.createdAt)}
-                    </span>
+                  <div className="relative max-w-[70%]">
+                    {isEditing ? (
+                      <div className="rounded-lg bg-[#2a3942] p-2">
+                        <textarea
+                          value={editDraft}
+                          onChange={(e) => setEditDraft(e.target.value)}
+                          rows={3}
+                          className="font-hindi w-full resize-none rounded bg-[#111b21] p-2 text-sm text-[#e9edef] outline-none"
+                        />
+                        <div className="mt-2 flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingId(null);
+                              setEditDraft("");
+                            }}
+                            className="rounded px-2 py-1 text-xs text-[#8696a0]"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            disabled={actionLoading || !editDraft.trim()}
+                            onClick={() => saveEdit(msg.id)}
+                            className="rounded bg-[#00a884] px-2 py-1 text-xs text-white"
+                          >
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div
+                          className={`relative rounded-lg px-2 py-1.5 shadow-sm ${
+                            isUser
+                              ? "rounded-tl-none bg-[#202c33] text-[#e9edef]"
+                              : "rounded-tr-none bg-[#005c4b] text-[#e9edef]"
+                          }`}
+                        >
+                          <p className="font-hindi whitespace-pre-wrap pr-14 text-[14.2px] leading-[19px]">
+                            {msg.content}
+                          </p>
+                          <span className="absolute bottom-1 right-2 flex items-center gap-1 text-[11px] text-[#8696a0]">
+                            {msg.editedAt ? (
+                              <span className="italic">edited</span>
+                            ) : null}
+                            {formatMsgTime(msg.createdAt)}
+                          </span>
+                        </div>
+                        <div
+                          className={`absolute top-0 flex gap-0.5 opacity-0 transition group-hover:opacity-100 ${
+                            isUser ? "right-0 translate-x-full pl-1" : "left-0 -translate-x-full pr-1"
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            title="Edit message"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingId(msg.id);
+                              setEditDraft(msg.content);
+                            }}
+                            className="rounded bg-[#2a3942] p-1.5 text-[#8696a0] hover:text-[#e9edef]"
+                          >
+                            <svg
+                              className="h-3.5 w-3.5"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                              />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            title="Delete message"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteMessage(msg.id);
+                            }}
+                            className="rounded bg-[#2a3942] p-1.5 text-red-400 hover:text-red-300"
+                          >
+                            <svg
+                              className="h-3.5 w-3.5"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                              />
+                            </svg>
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               );
@@ -219,7 +355,6 @@ export function ChatDetailPanel({ phone }: Props) {
         </div>
       </div>
 
-      {/* Composer */}
       <footer className="shrink-0 border-t border-[#222d34] bg-[#202c33] px-4 py-3">
         {status ? (
           <p className="mb-2 text-center text-xs text-[#00a884]">{status}</p>

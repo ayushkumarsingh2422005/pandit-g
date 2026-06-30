@@ -1,12 +1,24 @@
 import { getDb } from "./mongodb";
 
+import { randomUUID } from "crypto";
+
 export type ChatRole = "user" | "assistant";
 
 export type StoredChatMessage = {
+  id: string;
   role: ChatRole;
   content: string;
   createdAt: Date;
+  editedAt?: Date;
 };
+
+export function createStoredMessage(
+  role: ChatRole,
+  content: string,
+  createdAt = new Date(),
+): StoredChatMessage {
+  return { id: randomUUID(), role, content, createdAt };
+}
 
 /** Client onboarding funnel stages. */
 export type FunnelStage =
@@ -81,8 +93,8 @@ export async function saveConversationTurn(
   const db = await getDb();
   const now = new Date();
   const newMessages: StoredChatMessage[] = [
-    { role: "user", content: userMessage, createdAt: now },
-    { role: "assistant", content: assistantReply, createdAt: now },
+    createStoredMessage("user", userMessage, now),
+    createStoredMessage("assistant", assistantReply, now),
   ];
 
   const setFields: Record<string, unknown> = { updatedAt: now };

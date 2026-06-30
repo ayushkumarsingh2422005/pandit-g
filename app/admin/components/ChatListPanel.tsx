@@ -8,6 +8,7 @@ export type ConversationRow = {
   clientName?: string;
   funnelStage?: string;
   blocked: boolean;
+  blockReason?: string;
   messageCount: number;
   updatedAt?: string;
   lastMessage?: string;
@@ -38,30 +39,43 @@ function avatarLabel(row: ConversationRow): string {
 type Props = {
   selectedPhone?: string;
   search: string;
+  blockedOnly?: boolean;
 };
 
-export function ChatListPanel({ selectedPhone, search }: Props) {
+export function ChatListPanel({
+  selectedPhone,
+  search,
+  blockedOnly = false,
+}: Props) {
   const [rows, setRows] = useState<ConversationRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async (q?: string) => {
-    setLoading(true);
-    try {
-      const params = q ? `?search=${encodeURIComponent(q)}` : "";
-      const res = await fetch(`/api/admin/conversations${params}`);
-      if (res.ok) {
-        const data = await res.json();
-        setRows(data.conversations ?? []);
+  const load = useCallback(
+    async (q?: string, blocked?: boolean) => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams();
+        if (q) params.set("search", q);
+        if (blocked) params.set("blocked", "true");
+        const qs = params.toString();
+        const res = await fetch(
+          `/api/admin/conversations${qs ? `?${qs}` : ""}`,
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setRows(data.conversations ?? []);
+        }
+      } finally {
+        setLoading(false);
       }
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    },
+    [],
+  );
 
   useEffect(() => {
-    const t = setTimeout(() => load(search), 250);
+    const t = setTimeout(() => load(search, blockedOnly), 250);
     return () => clearTimeout(t);
-  }, [search, load]);
+  }, [search, blockedOnly, load]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -69,7 +83,7 @@ export function ChatListPanel({ selectedPhone, search }: Props) {
         <p className="px-4 py-8 text-center text-sm text-[#8696a0]">Loading…</p>
       ) : rows.length === 0 ? (
         <p className="px-4 py-8 text-center text-sm text-[#8696a0]">
-          No conversations
+          {blockedOnly ? "No blocked conversations" : "No conversations"}
         </p>
       ) : (
         <ul className="overflow-y-auto">
@@ -107,7 +121,10 @@ export function ChatListPanel({ selectedPhone, search }: Props) {
                         {row.lastMessage || "No messages"}
                       </p>
                       {row.blocked ? (
-                        <span className="shrink-0 text-[10px] text-red-400">
+                        <span
+                          className="shrink-0 text-[10px] text-red-400"
+                          title={row.blockReason}
+                        >
                           blocked
                         </span>
                       ) : null}

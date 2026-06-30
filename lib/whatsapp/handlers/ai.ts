@@ -177,16 +177,18 @@ export async function handleAiMessage(message: IncomingAiMessage) {
 
   const storedUserMessage = buildStoredUserMessage(message.text, hasImage);
   const detailsProvided = userProvidedDetails(message.text, hasImage);
+  const stage = await resolveFunnelStage(message.from);
 
   const moderated = await handleConversationModeration({
     phone: message.from,
     text: message.text,
-    skipStrikeCheck: detailsProvided,
+    hasMedia: hasImage,
+    funnelStage: stage,
+    skipFlowViolationCheck: detailsProvided,
   });
   if (moderated) return;
 
   try {
-    const stage = await resolveFunnelStage(message.from);
 
     if (stage === "initial") {
       const reply = await generateFunnelReply({
