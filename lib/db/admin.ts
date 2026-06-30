@@ -51,6 +51,7 @@ export async function listConversations(options?: {
     filter.$or = [
       { phone: { $regex: q, $options: "i" } },
       { clientName: { $regex: q, $options: "i" } },
+      { contactName: { $regex: q, $options: "i" } },
     ];
   }
 
@@ -66,7 +67,9 @@ export async function listConversations(options?: {
     const last = messages[messages.length - 1];
     return {
       phone: doc.phone as string,
-      clientName: doc.clientName as string | undefined,
+      clientName:
+        (doc.clientName as string | undefined) ||
+        (doc.contactName as string | undefined),
       funnelStage: doc.funnelStage as FunnelStage | undefined,
       blocked: Boolean(doc.blocked),
       blockReason: doc.blockReason as string | undefined,
@@ -98,7 +101,9 @@ export async function getConversationDetail(
 
   return {
     phone: doc.phone as string,
-    clientName: doc.clientName as string | undefined,
+    clientName:
+      (doc.clientName as string | undefined) ||
+      (doc.contactName as string | undefined),
     funnelStage: doc.funnelStage as FunnelStage | undefined,
     blocked: Boolean(doc.blocked),
     blockReason: doc.blockReason as string | undefined,

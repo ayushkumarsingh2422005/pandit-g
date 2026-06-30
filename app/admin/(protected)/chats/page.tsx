@@ -1,134 +1,20 @@
-"use client";
-
-import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
-
-type ConversationRow = {
-  phone: string;
-  clientName?: string;
-  funnelStage?: string;
-  blocked: boolean;
-  messageCount: number;
-  updatedAt?: string;
-  lastMessage?: string;
-};
-
-export default function AdminChatsPage() {
-  const [search, setSearch] = useState("");
-  const [rows, setRows] = useState<ConversationRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  const load = useCallback(async (q?: string) => {
-    setLoading(true);
-    setError("");
-    try {
-      const params = q ? `?search=${encodeURIComponent(q)}` : "";
-      const res = await fetch(`/api/admin/conversations${params}`);
-      if (!res.ok) throw new Error("Failed to load");
-      const data = await res.json();
-      setRows(data.conversations ?? []);
-    } catch {
-      setError("Could not load conversations");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    const timer = setTimeout(() => load(search), 300);
-    return () => clearTimeout(timer);
-  }, [search, load]);
-
+export default function AdminChatsEmptyPage() {
   return (
-    <div className="p-6">
-      <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-white">WhatsApp Chats</h1>
-          <p className="text-sm text-zinc-400">
-            View, clear, block, or message any user
-          </p>
-        </div>
-        <input
-          type="search"
-          placeholder="Search phone or name…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full max-w-xs rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-coral"
-        />
-      </header>
-
-      {error ? <p className="mb-4 text-sm text-red-400">{error}</p> : null}
-
-      <div className="overflow-hidden rounded-xl border border-zinc-800">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-zinc-900 text-xs uppercase text-zinc-500">
-            <tr>
-              <th className="px-4 py-3">Phone</th>
-              <th className="px-4 py-3">Name</th>
-              <th className="px-4 py-3">Stage</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Msgs</th>
-              <th className="px-4 py-3">Updated</th>
-              <th className="px-4 py-3" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-800">
-            {loading ? (
-              <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-zinc-500">
-                  Loading…
-                </td>
-              </tr>
-            ) : rows.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-zinc-500">
-                  No conversations yet
-                </td>
-              </tr>
-            ) : (
-              rows.map((row) => (
-                <tr key={row.phone} className="hover:bg-zinc-900/50">
-                  <td className="px-4 py-3 font-mono text-zinc-200">
-                    {row.phone}
-                  </td>
-                  <td className="px-4 py-3 text-zinc-300">
-                    {row.clientName ?? "—"}
-                  </td>
-                  <td className="px-4 py-3 text-zinc-400">
-                    {row.funnelStage ?? "—"}
-                  </td>
-                  <td className="px-4 py-3">
-                    {row.blocked ? (
-                      <span className="rounded-full bg-red-500/20 px-2 py-0.5 text-xs text-red-300">
-                        Blocked
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs text-emerald-300">
-                        Active
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-zinc-400">{row.messageCount}</td>
-                  <td className="px-4 py-3 text-xs text-zinc-500">
-                    {row.updatedAt
-                      ? new Date(row.updatedAt).toLocaleString("en-IN")
-                      : "—"}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <Link
-                      href={`/admin/chats/${encodeURIComponent(row.phone)}`}
-                      className="text-coral hover:underline"
-                    >
-                      Open
-                    </Link>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+    <div className="flex flex-1 flex-col items-center justify-center bg-[#222d34]/30 text-center">
+      <div className="mb-6 opacity-40">
+        <svg
+          className="mx-auto h-24 w-24 text-[#8696a0]"
+          fill="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
+        </svg>
       </div>
+      <h2 className="text-2xl font-light text-[#e9edef]">Pandit G Admin</h2>
+      <p className="mt-2 max-w-sm text-sm text-[#8696a0]">
+        Select a chat from the list to view messages, send custom replies, block
+        users, or clear conversation data.
+      </p>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import "./admin.css";
 
 export const metadata: Metadata = {
   title: "Admin — Pandit G",
@@ -11,6 +12,8 @@ export default function AdminRootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">{children}</div>
+    <div className="admin-wa h-screen overflow-hidden bg-[#111b21] text-[#e9edef]">
+      {children}
+    </div>
   );
 }

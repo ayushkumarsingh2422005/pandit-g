@@ -8,7 +8,7 @@ export default async function AdminLoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
+    <div className="flex h-screen items-center justify-center bg-[#111b21] px-4">
       <AdminLoginForm />
     </div>
   );
