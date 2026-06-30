@@ -1,12 +1,11 @@
 import type { PaymentRecord } from "@/lib/db/payments";
 import { startConsultationSession } from "@/lib/db/sessions";
 import { saveConversationTurn } from "@/lib/db/conversations";
-import { getClientName } from "@/lib/db/conversation-profile";
 import { getRazorpayConfig } from "@/lib/razorpay/config";
 import { sendTextMessage } from "@/lib/whatsapp/client";
 
-function buildPaymentSuccessMessage(clientName: string | undefined): string {
-  const greeting = clientName ? `${clientName} जी, ` : "";
+function buildPaymentSuccessMessage(contactName: string | undefined): string {
+  const greeting = contactName ? `${contactName} जी, ` : "";
   return `${greeting}दक्षिणा प्राप्त हुई। चलिए अब बात करते हैं कि इन रुकावटों की वजह क्या है और इन्हें दूर करने के लिए आपको कौन से आसान और अचूक उपाय करने हैं — अपना सवाल लिखिए।`;
 }
 
@@ -100,8 +99,7 @@ export async function processRazorpayWebhookEvent(
     razorpayPaymentId: paid.razorpayPaymentId,
   });
 
-  const clientName = (await getClientName(paid.phone)) ?? undefined;
-  const reply = buildPaymentSuccessMessage(clientName);
+  const reply = buildPaymentSuccessMessage(paid.contactName);
 
   await saveConversationTurn(
     paid.phone,

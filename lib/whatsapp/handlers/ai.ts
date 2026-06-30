@@ -2,22 +2,11 @@ import {
   generateErrorReply,
   generateFunnelReply,
 } from "@/lib/ai/generate-funnel-reply";
-import { detectConsultationIntent } from "@/lib/ai/detect-consultation-intent";
-import { generateFreeFollowupReply } from "@/lib/ai/generate-free-followup-reply";
 import { generatePaymentReply } from "@/lib/ai/generate-payment-reply";
 import type { PaymentReplyType } from "@/lib/ai/generate-payment-reply";
 import { generatePanditGReply } from "@/lib/ai/generate-reply";
-import { getSuryaRashiFromDate } from "@/lib/astro/rashi";
-import { saveConversationTurn, type FunnelStage } from "@/lib/db/conversations";
-import {
-  getClientBirthProfile,
-  getClientName,
-  saveClientBirthProfile,
-  saveClientName,
-} from "@/lib/db/conversation-profile";
-import { parseClientName } from "@/lib/funnel/detect-client-name";
+import { saveConversationTurn } from "@/lib/db/conversations";
 import { userProvidedDetails } from "@/lib/funnel/detect-birth-details";
-import { parseBirthDetailsFromText } from "@/lib/funnel/parse-birth-details";
 import { getFunnelReadingDelayMs, sleep } from "@/lib/funnel/config";
 import { resolveFunnelStage } from "@/lib/funnel/state";
 import { getConsultationAccess } from "@/lib/payments/consultation-access";
@@ -43,9 +32,16 @@ async function persistTurn(
   phone: string,
   userMessage: string,
   reply: string,
-  funnelStage: FunnelStage,
+  contactName: string | undefined,
+  funnelStage: "awaiting_details" | "reading_delivered" | "active",
 ) {
-  await saveConversationTurn(phone, userMessage, reply, undefined, funnelStage);
+  await saveConversationTurn(
+    phone,
+    userMessage,
+    reply,
+    contactName,
+    funnelStage,
+  );
 }
 
 function requiresPaidSession(stage: string): boolean {
@@ -54,71 +50,19 @@ function requiresPaidSession(stage: string): boolean {
 
 async function resolvePaymentUrl(
   phone: string,
+  contactName: string | undefined,
   existingUrl?: string,
 ): Promise<string | undefined> {
   if (existingUrl) return existingUrl;
   if (!isRazorpayConfigured()) return undefined;
 
-  const clientName = (await getClientName(phone)) ?? undefined;
-
   try {
-    const link = await getOrCreateConsultationPaymentLink(phone, clientName);
+    const link = await getOrCreateConsultationPaymentLink(phone, contactName);
     return link.shortUrl;
   } catch (error) {
     console.error("[payment link]", error);
     return undefined;
   }
-}
-
-async function buildBirthProfileFromMessage(text: string, hasImage: boolean) {
-  if (hasImage && !text.trim()) {
-    return { fromPalmPhoto: true } as const;
-  }
-
-  const parsed = parseBirthDetailsFromText(text);
-  const rashi = parsed.dob ? getSuryaRashiFromDate(parsed.dob) : undefined;
-
-  return {
-    dobLabel: parsed.dobLabel,
-    timeLabel: parsed.timeLabel,
-    place: parsed.place,
-    rashi,
-    summary: parsed.summary,
-    fromPalmPhoto: hasImage && !parsed.dob,
-  };
-}
-
-async function deliverReadingFlow(
-  message: IncomingAiMessage,
-  storedUserMessage: string,
-  clientName: string | null,
-  image?: { data: Uint8Array; mimeType: string },
-) {
-  const birthProfile = await buildBirthProfileFromMessage(
-    message.text,
-    Boolean(image),
-  );
-  await saveClientBirthProfile(message.from, birthProfile);
-
-  await sleep(getFunnelReadingDelayMs());
-
-  const reading = await generateFunnelReply({
-    stage: "reading",
-    phone: message.from,
-    userMessage: message.text,
-    image,
-    birthProfile,
-    clientName: clientName ?? undefined,
-  });
-
-  await persistTurn(
-    message.from,
-    storedUserMessage,
-    reading,
-    "reading_delivered",
-  );
-  await sendTextMessage({ to: message.from, body: reading });
-  await sendPaymentOfferAfterReading(message, clientName);
 }
 
 async function handlePaidConsultationGate(
@@ -128,96 +72,80 @@ async function handlePaidConsultationGate(
   image?: { data: Uint8Array; mimeType: string },
 ) {
   const access = await getConsultationAccess(message.from);
-  const birthProfile = await getClientBirthProfile(message.from);
-  const clientName = await getClientName(message.from);
-  const intent = detectConsultationIntent(message.text);
 
   if (access.hasAccess) {
     const reply = await generatePanditGReply({
       phone: message.from,
       userMessage: message.text,
+      contactName: message.contactName,
       image,
       funnelStage: "active",
       sessionMinutesRemaining: access.minutesRemaining,
-      birthProfile,
-      consultationIntent: intent,
-      clientName: clientName ?? undefined,
     });
     await sendTextMessage({ to: message.from, body: reply });
     return;
   }
 
   const pricing = getConsultationPricing();
+  const paymentUrl = await resolvePaymentUrl(
+    message.from,
+    message.contactName,
+    access.pendingPaymentUrl,
+  );
 
-  let replyType: PaymentReplyType | null = null;
+  let replyType: PaymentReplyType;
   if (userClaimsTheyPaid(message.text)) {
     replyType = "claimed_paid_pending";
   } else if (access.reason === "expired") {
     replyType = "expired";
-  } else if (isPaymentIntent(message.text)) {
+  } else if (stage === "reading_delivered" || isPaymentIntent(message.text)) {
     replyType = "offer";
+  } else {
+    replyType = "unpaid";
   }
 
-  if (replyType) {
-    const paymentUrl = await resolvePaymentUrl(
-      message.from,
-      access.pendingPaymentUrl,
-    );
-
-    const reply = await generatePaymentReply({
-      type: replyType,
-      phone: message.from,
-      userMessage: message.text,
-      paymentUrl,
-      amountInr: pricing.priceInrFormatted,
-      sessionMinutes: pricing.sessionMinutes,
-      clientName: clientName ?? undefined,
-    });
-
-    await persistTurn(message.from, storedUserMessage, reply, "active");
-    await sendTextMessage({ to: message.from, body: reply });
-    return;
-  }
-
-  const reply = await generateFreeFollowupReply({
+  const reply = await generatePaymentReply({
+    type: replyType,
     phone: message.from,
     userMessage: message.text,
-    intent,
-    birthProfile,
-    clientName: clientName ?? undefined,
+    contactName: message.contactName,
+    paymentUrl,
+    amountInr: pricing.priceInrFormatted,
+    sessionMinutes: pricing.sessionMinutes,
   });
 
   await persistTurn(
     message.from,
     storedUserMessage,
     reply,
-    stage === "reading_delivered" ? "reading_delivered" : "active",
+    message.contactName,
+    "active",
   );
   await sendTextMessage({ to: message.from, body: reply });
 }
 
-async function sendPaymentOfferAfterReading(
-  message: IncomingAiMessage,
-  clientName: string | null,
-) {
+async function sendPaymentOfferAfterReading(message: IncomingAiMessage) {
   const pricing = getConsultationPricing();
-  const paymentUrl = await resolvePaymentUrl(message.from);
+  const paymentUrl = await resolvePaymentUrl(
+    message.from,
+    message.contactName,
+  );
 
   const paymentOffer = await generatePaymentReply({
     type: "offer",
     phone: message.from,
     userMessage: "गहन परामर्श के लिए भुगतान",
+    contactName: message.contactName,
     paymentUrl,
     amountInr: pricing.priceInrFormatted,
     sessionMinutes: pricing.sessionMinutes,
-    clientName: clientName ?? undefined,
   });
 
   await saveConversationTurn(
     message.from,
     "[भुगतान लिंक भेजा]",
     paymentOffer,
-    undefined,
+    message.contactName,
     "reading_delivered",
   );
 
@@ -249,7 +177,6 @@ export async function handleAiMessage(message: IncomingAiMessage) {
 
   const storedUserMessage = buildStoredUserMessage(message.text, hasImage);
   const detailsProvided = userProvidedDetails(message.text, hasImage);
-  const parsedName = parseClientName(message.text);
 
   const moderated = await handleConversationModeration({
     phone: message.from,
@@ -260,52 +187,21 @@ export async function handleAiMessage(message: IncomingAiMessage) {
 
   try {
     const stage = await resolveFunnelStage(message.from);
-    let clientName = await getClientName(message.from);
 
     if (stage === "initial") {
       const reply = await generateFunnelReply({
         stage: "welcome",
         phone: message.from,
         userMessage: message.text,
+        contactName: message.contactName,
       });
-      await persistTurn(message.from, storedUserMessage, reply, "awaiting_name");
-      await sendTextMessage({ to: message.from, body: reply });
-      return;
-    }
-
-    if (stage === "awaiting_name") {
-      if (parsedName) {
-        await saveClientName(message.from, parsedName);
-        clientName = parsedName;
-
-        if (detailsProvided) {
-          await deliverReadingFlow(message, storedUserMessage, clientName, image);
-          return;
-        }
-
-        const reply = await generateFunnelReply({
-          stage: "ask_details",
-          phone: message.from,
-          userMessage: message.text,
-          clientName,
-        });
-        await persistTurn(
-          message.from,
-          storedUserMessage,
-          reply,
-          "awaiting_details",
-        );
-        await sendTextMessage({ to: message.from, body: reply });
-        return;
-      }
-
-      const reply = await generateFunnelReply({
-        stage: "ask_name",
-        phone: message.from,
-        userMessage: message.text,
-        hintBirthDetailsPending: detailsProvided,
-      });
-      await persistTurn(message.from, storedUserMessage, reply, "awaiting_name");
+      await persistTurn(
+        message.from,
+        storedUserMessage,
+        reply,
+        message.contactName,
+        "awaiting_details",
+      );
       await sendTextMessage({ to: message.from, body: reply });
       return;
     }
@@ -315,12 +211,13 @@ export async function handleAiMessage(message: IncomingAiMessage) {
         stage: "ask_details",
         phone: message.from,
         userMessage: message.text,
-        clientName: clientName ?? undefined,
+        contactName: message.contactName,
       });
       await persistTurn(
         message.from,
         storedUserMessage,
         reply,
+        message.contactName,
         "awaiting_details",
       );
       await sendTextMessage({ to: message.from, body: reply });
@@ -328,7 +225,25 @@ export async function handleAiMessage(message: IncomingAiMessage) {
     }
 
     if (stage === "awaiting_details" && detailsProvided) {
-      await deliverReadingFlow(message, storedUserMessage, clientName, image);
+      await sleep(getFunnelReadingDelayMs());
+
+      const reading = await generateFunnelReply({
+        stage: "reading",
+        phone: message.from,
+        userMessage: message.text,
+        contactName: message.contactName,
+        image,
+      });
+
+      await persistTurn(
+        message.from,
+        storedUserMessage,
+        reading,
+        message.contactName,
+        "reading_delivered",
+      );
+      await sendTextMessage({ to: message.from, body: reading });
+      await sendPaymentOfferAfterReading(message);
       return;
     }
 
@@ -342,15 +257,12 @@ export async function handleAiMessage(message: IncomingAiMessage) {
       return;
     }
 
-    const birthProfile = await getClientBirthProfile(message.from);
     const reply = await generatePanditGReply({
       phone: message.from,
       userMessage: message.text,
+      contactName: message.contactName,
       image,
       funnelStage: stage,
-      birthProfile,
-      consultationIntent: detectConsultationIntent(message.text),
-      clientName: clientName ?? undefined,
     });
 
     await sendTextMessage({ to: message.from, body: reply });
