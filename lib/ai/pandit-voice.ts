@@ -18,6 +18,14 @@ TONE:
 - Short WhatsApp paragraphs, no bullet lists
 - Never mention AI/bot`;
 
+/** How to address the user — only use name if they told you in chat. */
+export function buildClientNameHint(clientName?: string): string {
+  if (clientName) {
+    return `Client's name (they told you in chat): ${clientName}. You may address them as "${clientName} जी" sometimes — naturally, not in every sentence. Never use WhatsApp profile name.`;
+  }
+  return `Do NOT use WhatsApp profile name. Address as "आप" until the client shares their name in chat.`;
+}
+
 /** Planets & technical terms — forbidden until payment is confirmed. */
 export const NO_PLANETS_BEFORE_PAYMENT = `
 STRICT — DO NOT mention any of these before payment:

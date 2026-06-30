@@ -1,86 +1,95 @@
 import { createXai } from "@ai-sdk/xai";
 import type { ModelMessage, UserModelMessage } from "ai";
 import { generateText } from "ai";
+import { formatRashiLine } from "@/lib/astro/rashi";
+import type { ClientBirthProfile } from "@/lib/db/conversation-profile";
 import { getConversationHistory } from "@/lib/db/conversations";
 import { isDbConfigured } from "@/lib/db/is-configured";
 import type { UserImageInput } from "./generate-reply";
 import { getXaiConfig } from "./config";
 import { normalizeReplyNumerals } from "./normalize-numerals";
 import {
+  buildClientNameHint,
   NO_PLANETS_BEFORE_PAYMENT,
   PANDIT_CITY,
   PANDIT_NAME,
   PANDIT_VOICE,
 } from "./pandit-voice";
 
-export type FunnelReplyStage = "welcome" | "ask_details" | "reading";
+export type FunnelReplyStage =
+  | "welcome"
+  | "ask_name"
+  | "ask_details"
+  | "reading";
 
-function buildWelcomePrompt(contactName?: string): string {
-  let prompt = `${PANDIT_VOICE}
+function buildWelcomePrompt(): string {
+  return `${PANDIT_VOICE}
 
-TASK — चरण 1: पहला जवाब (परिचय + विवरण मांगना):
+${buildClientNameHint()}
+
+TASK — पहला जवाब (परिचय + नाम पूछना):
 - Introduce yourself: मैं ${PANDIT_NAME} हूँ, ${PANDIT_CITY} से — word freshly each time.
-- Do NOT open with only "कल्याण हो" — intro first, then purpose.
-- Say you help people clear life's complications / उलझनें.
-- Ask them to send EITHER:
+- Do NOT open with only "कल्याण हो".
+- Say you help people with life's complications — one warm line.
+- Ask their name: "आपका नाम क्या है?" / "पहले अपना नाम बताइए" — natural Hindi.
+- Do NOT ask for birth details or photos yet — ONLY name in this message.
+- 3-4 lines.`;
+}
+
+function buildAskNamePrompt(hintBirthDetailsPending?: boolean): string {
+  return `${PANDIT_VOICE}
+
+${buildClientNameHint()}
+
+TASK — User has NOT clearly shared their name yet.
+${hintBirthDetailsPending ? "- They sent birth/palm info but name is still needed first — thank them briefly, ask name before continuing." : "- Politely ask again: अपना नाम बताइए (first name is enough)."}
+- Do NOT use WhatsApp profile name. Do NOT guess a name.
+- Do NOT give astrology reading yet.
+- 2-3 lines.`;
+}
+
+function buildAskDetailsPrompt(clientName?: string): string {
+  return `${PANDIT_VOICE}
+
+${buildClientNameHint(clientName)}
+
+TASK — Name received. Now collect birth data before any reading:
+- Thank them by name once if natural (${clientName ? `${clientName} जी` : "आप"}).
+- Ask for EITHER:
   • जन्म तिथि (दिन, महीना, साल), जन्म समय और जन्म स्थान, OR
   • हथेली की साफ तस्वीर (हस्तरेखा).
-- Warm, short: 3-5 lines. Do NOT answer astrology questions yet — only intro + collection.`;
-
-  if (contactName) {
-    prompt += `\nClient name: ${contactName} — may use "${contactName} जी" once if natural.`;
-  }
-
-  return prompt;
+- If they asked a question, briefly acknowledge — but say you need birth/palm data first.
+- 3-5 lines.`;
 }
 
-function buildAskDetailsPrompt(contactName?: string): string {
-  let prompt = `${PANDIT_VOICE}
+function buildReadingPrompt(
+  birthProfile?: ClientBirthProfile | null,
+  clientName?: string,
+): string {
+  const rashiHint = birthProfile?.rashi
+    ? `3. MUST include: "${formatRashiLine(birthProfile.rashi)}"`
+    : `3. If palm photo only (no DOB), skip rashi — problems from palm.`;
 
-TASK — User wrote something BUT has NOT sent birth details or palm photo yet:
-- Briefly acknowledge what they wrote (their question or mood).
-- MUST clearly refuse to analyze without data. Say in fresh words:
-  जब तक आपकी जन्म तिथि, समय, स्थान या हस्तरेखा की फोटो नहीं मिलेगी,
-  आप सटीक समस्या, सटीक उपाय या गहन मार्गदर्शन नहीं दे सकते।
-- Do NOT guess their problems. Do NOT give remedies or planet talk.
-- Politely ask again for DOB + time + place OR clear palm photo.
-- 3-5 lines, caring but firm.`;
+  const confirmHint = birthProfile?.summary
+    ? `1. ONE short line confirming birth details (Arabic digits): ${birthProfile.summary} — only once ever.`
+    : `1. ONE short line confirming palm/birth info received.`;
 
-  if (contactName) {
-    prompt += `\nClient name: ${contactName}.`;
-  }
+  return `${PANDIT_VOICE}
 
-  return prompt;
-}
+${buildClientNameHint(clientName)}
 
-function buildReadingPrompt(contactName?: string): string {
-  let prompt = `${PANDIT_VOICE}
+TASK — Trust phase. User shared palm OR birth details.
 
-TASK — चरण 2: Trust phase. User just shared palm photo OR birth details.
-
-Write ONE message that:
-1. Briefly confirms what they sent (1 short line — dates/times in conversational Hindi with Arabic digits: 24, 1991, 12 baje — not २४, १९९१).
-2. Describe ONLY their current life problems in plain sympathetic Hindi — as if you truly see their pain.
-   Pick 3-4 areas naturally from: mental unrest, hard work not paying off, money not staying,
-   family tension, marriage delay stress, obstacles in every task, inner worry.
-   Match their earlier questions (e.g. marriage worry → marriage delay feelings).
-3. End with empathy — e.g. feels like something is blocking every step — WITHOUT naming astrological causes.
-
-STYLE: खड़ी बोली — simple, human, like the examples:
-"आप मानसिक रूप से बहुत परेशान चल रहे हैं… मेहनत का फल नहीं मिल पा रहा… पैसा हाथ में टिक नहीं रहा… परिवार में तनाव… हर काम में रुकावट।"
+Write ONE message:
+${confirmHint}
+2. ${rashiHint}
+4. Describe ONLY life problems in plain Hindi — 3-4 areas (mental stress, money, family, career blocks, marriage delay). Match their earlier questions.
+5. Empathy close — blockage feeling — NO astrological causes.
 
 ${NO_PLANETS_BEFORE_PAYMENT}
 
-CRITICAL — NEVER in this message:
-- Payment, price, consultation offer, or "परामर्श लें" — payment comes in the NEXT separate message.
-- "थोड़ा वक्त", "देख रहा हूँ", stalling, or asking for birth details again.
-- 4-6 lines, flowing text.`;
-
-  if (contactName) {
-    prompt += `\nClient name: ${contactName}.`;
-  }
-
-  return prompt;
+NEVER: payment offer, stalling, repeat birth ask, WhatsApp profile name.
+5-7 lines.`;
 }
 
 function buildUserMessage(
@@ -122,14 +131,23 @@ function buildUserMessage(
   };
 }
 
-function systemForStage(stage: FunnelReplyStage, contactName?: string): string {
+function systemForStage(
+  stage: FunnelReplyStage,
+  options: {
+    birthProfile?: ClientBirthProfile | null;
+    clientName?: string;
+    hintBirthDetailsPending?: boolean;
+  },
+): string {
   switch (stage) {
     case "welcome":
-      return buildWelcomePrompt(contactName);
+      return buildWelcomePrompt();
+    case "ask_name":
+      return buildAskNamePrompt(options.hintBirthDetailsPending);
     case "ask_details":
-      return buildAskDetailsPrompt(contactName);
+      return buildAskDetailsPrompt(options.clientName);
     case "reading":
-      return buildReadingPrompt(contactName);
+      return buildReadingPrompt(options.birthProfile, options.clientName);
   }
 }
 
@@ -137,16 +155,20 @@ export type GenerateFunnelReplyInput = {
   stage: FunnelReplyStage;
   phone: string;
   userMessage: string;
-  contactName?: string;
   image?: UserImageInput;
+  birthProfile?: ClientBirthProfile | null;
+  clientName?: string;
+  hintBirthDetailsPending?: boolean;
 };
 
 export async function generateFunnelReply({
   stage,
   phone,
   userMessage,
-  contactName,
   image,
+  birthProfile,
+  clientName,
+  hintBirthDetailsPending,
 }: GenerateFunnelReplyInput): Promise<string> {
   const { apiKey, model, visionModel } = getXaiConfig();
   const provider = createXai({ apiKey });
@@ -170,7 +192,11 @@ export async function generateFunnelReply({
 
   const { text } = await generateText({
     model: languageModel,
-    system: systemForStage(stage, contactName),
+    system: systemForStage(stage, {
+      birthProfile,
+      clientName,
+      hintBirthDetailsPending,
+    }),
     messages,
     temperature: 0.88,
     maxRetries: 1,

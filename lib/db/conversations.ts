@@ -11,6 +11,7 @@ export type StoredChatMessage = {
 /** Client onboarding funnel stages. */
 export type FunnelStage =
   | "initial"
+  | "awaiting_name"
   | "awaiting_details"
   | "reading_delivered"
   | "active";

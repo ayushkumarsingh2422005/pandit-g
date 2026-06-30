@@ -6,7 +6,9 @@ import {
   saveConversationTurn,
   type FunnelStage,
 } from "@/lib/db/conversations";
+import type { ClientBirthProfile } from "@/lib/db/conversation-profile";
 import { isDbConfigured } from "@/lib/db/is-configured";
+import type { ConsultationIntent } from "./detect-consultation-intent";
 import { getXaiConfig } from "./config";
 import { normalizeReplyNumerals } from "./normalize-numerals";
 import { buildPanditGSystemPrompt } from "./prompts";
@@ -19,10 +21,12 @@ export type UserImageInput = {
 export type GeneratePanditGReplyInput = {
   phone: string;
   userMessage: string;
-  contactName?: string;
   image?: UserImageInput;
   funnelStage?: FunnelStage;
   sessionMinutesRemaining?: number;
+  birthProfile?: ClientBirthProfile | null;
+  consultationIntent?: ConsultationIntent;
+  clientName?: string;
 };
 
 function buildUserModelMessage(
@@ -64,10 +68,12 @@ function buildStoredUserMessage(userMessage: string, hasImage: boolean): string 
 export async function generatePanditGReply({
   phone,
   userMessage,
-  contactName,
   image,
   funnelStage,
   sessionMinutesRemaining,
+  birthProfile,
+  consultationIntent,
+  clientName,
 }: GeneratePanditGReplyInput): Promise<string> {
   const { apiKey, model, visionModel } = getXaiConfig();
   const provider = createXai({ apiKey });
@@ -91,21 +97,19 @@ export async function generatePanditGReply({
     ? provider.chat(visionModel)
     : provider.responses(model);
 
-  const isPostReading =
-    funnelStage === "reading_delivered" || funnelStage === "active";
-
   const { text } = await generateText({
     model: languageModel,
     system: buildPanditGSystemPrompt({
-      contactName,
       isContinuingConversation,
       hasImage,
-      isPostReading,
       isPaidSession: funnelStage === "active",
       sessionMinutesRemaining,
+      birthProfile,
+      consultationIntent,
+      clientName,
     }),
     messages,
-    temperature: 0.93,
+    temperature: 0.88,
     maxRetries: 1,
   });
 
@@ -123,7 +127,7 @@ export async function generatePanditGReply({
       phone,
       buildStoredUserMessage(userMessage, hasImage),
       reply,
-      contactName,
+      undefined,
       nextStage,
     );
   }

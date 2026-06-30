@@ -5,7 +5,7 @@ import { isDbConfigured } from "@/lib/db/is-configured";
 import { getConsultationPricing } from "@/lib/config/consultation-pricing";
 import { getXaiConfig } from "./config";
 import { normalizeReplyNumerals } from "./normalize-numerals";
-import { NO_PLANETS_BEFORE_PAYMENT, PANDIT_VOICE } from "./pandit-voice";
+import { NO_PLANETS_BEFORE_PAYMENT, PANDIT_VOICE, buildClientNameHint } from "./pandit-voice";
 
 export type PaymentReplyType =
   | "offer"
@@ -23,20 +23,21 @@ export type GeneratePaymentReplyInput = {
   amountInr?: string;
   sessionMinutes?: number;
   minutesRemaining?: number;
+  clientName?: string;
 };
 
 function buildPrompt(input: GeneratePaymentReplyInput): string {
   const pricing = getConsultationPricing();
   const {
     type,
-    contactName,
     paymentUrl,
     amountInr = pricing.priceInrFormatted,
     sessionMinutes = pricing.sessionMinutes,
     minutesRemaining,
+    clientName,
   } = input;
 
-  let prompt = PANDIT_VOICE + "\n\n";
+  let prompt = PANDIT_VOICE + "\n\n" + buildClientNameHint(clientName) + "\n\n";
 
   switch (type) {
     case "offer":
@@ -83,10 +84,6 @@ ${paymentUrl ? `- Link again:\n${paymentUrl}` : "- Ask to message again shortly.
 - Invite real questions. ${minutesRemaining ? `~${minutesRemaining} min left.` : ""}
 - 2-4 lines.`;
       break;
-  }
-
-  if (contactName) {
-    prompt += `\nClient name: ${contactName}.`;
   }
 
   if (paymentUrl) {

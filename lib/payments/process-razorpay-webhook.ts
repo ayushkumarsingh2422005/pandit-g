@@ -1,15 +1,12 @@
 import type { PaymentRecord } from "@/lib/db/payments";
 import { startConsultationSession } from "@/lib/db/sessions";
-import { getConsultationPricing } from "@/lib/config/consultation-pricing";
 import { saveConversationTurn } from "@/lib/db/conversations";
+import { getClientName } from "@/lib/db/conversation-profile";
 import { getRazorpayConfig } from "@/lib/razorpay/config";
 import { sendTextMessage } from "@/lib/whatsapp/client";
 
-function buildPaymentSuccessMessage(
-  contactName: string | undefined,
-  _sessionMinutes: number,
-): string {
-  const greeting = contactName ? `${contactName} जी, ` : "";
+function buildPaymentSuccessMessage(clientName: string | undefined): string {
+  const greeting = clientName ? `${clientName} जी, ` : "";
   return `${greeting}दक्षिणा प्राप्त हुई। चलिए अब बात करते हैं कि इन रुकावटों की वजह क्या है और इन्हें दूर करने के लिए आपको कौन से आसान और अचूक उपाय करने हैं — अपना सवाल लिखिए।`;
 }
 
@@ -93,7 +90,6 @@ export async function processRazorpayWebhookEvent(
     return;
   }
 
-  const pricing = getConsultationPricing();
   const { sessionMinutes } = getRazorpayConfig();
 
   await startConsultationSession({
@@ -104,10 +100,8 @@ export async function processRazorpayWebhookEvent(
     razorpayPaymentId: paid.razorpayPaymentId,
   });
 
-  const reply = buildPaymentSuccessMessage(
-    paid.contactName,
-    pricing.sessionMinutes,
-  );
+  const clientName = (await getClientName(paid.phone)) ?? undefined;
+  const reply = buildPaymentSuccessMessage(clientName);
 
   await saveConversationTurn(
     paid.phone,

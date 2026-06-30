@@ -4,6 +4,7 @@ import {
   getConversationFunnelStage,
   type FunnelStage,
 } from "@/lib/db/conversations";
+import { getClientName } from "@/lib/db/conversation-profile";
 import { isDbConfigured } from "@/lib/db/is-configured";
 
 export type { FunnelStage };
@@ -14,11 +15,14 @@ function userSharedDetails(content: string): boolean {
 
 function inferStageFromHistory(
   messages: { role: string; content: string }[],
+  hasClientName: boolean,
 ): FunnelStage {
   if (messages.length === 0) return "initial";
 
   const assistantCount = messages.filter((m) => m.role === "assistant").length;
   if (assistantCount === 0) return "initial";
+
+  if (!hasClientName) return "awaiting_name";
 
   let detailsMessageIndex = -1;
   for (let i = 0; i < messages.length; i++) {
@@ -43,8 +47,9 @@ export async function resolveFunnelStage(phone: string): Promise<FunnelStage> {
     const stage = await getConversationFunnelStage(phone);
     if (stage) return stage;
 
+    const clientName = await getClientName(phone);
     const history = await getConversationHistory(phone);
-    return inferStageFromHistory(history);
+    return inferStageFromHistory(history, Boolean(clientName));
   }
 
   return "initial";
