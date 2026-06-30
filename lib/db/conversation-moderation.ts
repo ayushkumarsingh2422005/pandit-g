@@ -45,6 +45,21 @@ export async function blockConversation(
   );
 }
 
+export async function unblockConversation(phone: string): Promise<void> {
+  if (!isDbConfigured()) return;
+
+  const db = await getDb();
+  const now = new Date();
+
+  await db.collection(COLLECTION).updateOne(
+    { phone },
+    {
+      $set: { updatedAt: now, abuseStrikes: 0 },
+      $unset: { blocked: "", blockedAt: "", blockReason: "" },
+    },
+  );
+}
+
 export async function incrementAbuseStrike(phone: string): Promise<number> {
   if (!isDbConfigured()) return 1;
 
