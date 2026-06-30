@@ -12,6 +12,7 @@ import {
   unblockConversation,
 } from "@/lib/db/conversation-moderation";
 import { sendTextMessage } from "@/lib/whatsapp/client";
+import { UNBLOCK_NOTIFY_MESSAGE } from "@/lib/moderation/block-message";
 
 type RouteContext = { params: Promise<{ phone: string }> };
 
@@ -89,6 +90,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
   if (action === "unblock") {
     await unblockConversation(phone);
+    try {
+      await sendTextMessage({ to: phone, body: UNBLOCK_NOTIFY_MESSAGE });
+    } catch (error) {
+      console.error("[admin unblock notify]", error);
+    }
     return Response.json({ ok: true, blocked: false });
   }
 
