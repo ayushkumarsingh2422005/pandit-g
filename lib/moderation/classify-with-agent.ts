@@ -16,7 +16,11 @@ const MODERATION_SYSTEM = `You are a moderation agent for "Pandit G" — a Whats
 
 Your job: classify the user's latest message IN CONTEXT. Understand Hindi, Hinglish, and Devanagari. Words that look like jokes or insults may be legitimate life problems — judge by intent and sentence meaning, NOT keyword matching.
 
-CORE FLOW (always ALLOW):
+FIRST MESSAGE (no prior user messages in chat):
+- People open with ANYTHING random: "hi", "hello", "?", emoji, nonsense, off-topic — ALWAYS decision "allow".
+- Do NOT strike or block first message for off_topic, prank, repetitive, spam, or confused openers.
+- ONLY block first message for direct severe abuse, slurs, sexual harassment, or clear hate AT pandit/service.
+
 - Greetings, namaste, starting consultation
 - Birth details: date, time, place
 - Palm / hastrekha photos or questions
@@ -110,15 +114,40 @@ function agentResultToViolation(
   return null;
 }
 
+function applyFirstMessageLeniency(
+  result: AgentModerationResult,
+): AgentModerationResult {
+  if (result.category === "severe_abuse") {
+    return result;
+  }
+
+  if (result.category === "mild_abuse" && result.decision !== "allow") {
+    return result;
+  }
+
+  return {
+    decision: "allow",
+    category: "on_topic",
+    reason: `first message allowed: ${result.reason}`,
+  };
+}
+
 export async function classifyMessageWithAgent(input: {
   text: string;
   hasMedia?: boolean;
   funnelStage?: FunnelStage | null;
   recentUserTexts: string[];
   skipFlowViolationCheck?: boolean;
+  isFirstUserMessage?: boolean;
 }): Promise<{ violation: ViolationResult | null; agentReason?: string }> {
-  const { text, hasMedia, funnelStage, recentUserTexts, skipFlowViolationCheck } =
-    input;
+  const {
+    text,
+    hasMedia,
+    funnelStage,
+    recentUserTexts,
+    skipFlowViolationCheck,
+    isFirstUserMessage = false,
+  } = input;
 
   if (!process.env.XAI_API_KEY) {
     console.warn("[moderation] XAI_API_KEY missing — skipping agent moderation");
@@ -145,6 +174,7 @@ export async function classifyMessageWithAgent(input: {
   const userPrompt = `Funnel stage: ${funnelStage ?? "unknown"}
 User sent media (photo): ${hasMedia ? "yes" : "no"}
 Birth/palm details message: ${skipFlowViolationCheck ? "yes — be lenient on flow violations" : "no"}
+First user message in this chat: ${isFirstUserMessage ? "YES — allow random/off-topic openers; only block severe abuse" : "no"}
 
 ${recentBlock}
 
@@ -169,19 +199,26 @@ ${trimmed || "(empty text)"}
       return { violation: null };
     }
 
+    const judged = isFirstUserMessage
+      ? applyFirstMessageLeniency(parsed)
+      : parsed;
+
     if (
       skipFlowViolationCheck &&
-      parsed.decision !== "allow" &&
-      parsed.category !== "severe_abuse" &&
-      parsed.category !== "mild_abuse" &&
-      parsed.category !== "spam"
+      judged.decision !== "allow" &&
+      judged.category !== "severe_abuse" &&
+      judged.category !== "mild_abuse" &&
+      judged.category !== "spam"
     ) {
-      return { violation: null, agentReason: `skipped (details): ${parsed.reason}` };
+      return {
+        violation: null,
+        agentReason: `skipped (details): ${judged.reason}`,
+      };
     }
 
     return {
-      violation: agentResultToViolation(parsed),
-      agentReason: parsed.reason,
+      violation: agentResultToViolation(judged),
+      agentReason: judged.reason,
     };
   } catch (error) {
     console.error("[moderation agent]", error);

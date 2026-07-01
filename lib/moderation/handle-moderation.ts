@@ -44,6 +44,7 @@ export async function handleConversationModeration(input: {
 
   const recentInboundAt = await recordInboundMessage(phone);
   const recentUserTexts = await getRecentUserMessageTexts(phone);
+  const isFirstUserMessage = recentUserTexts.length === 0;
 
   const { violation, agentReason } = await detectViolationsAsync({
     text,
@@ -52,6 +53,7 @@ export async function handleConversationModeration(input: {
     hasMedia,
     funnelStage,
     skipFlowViolationCheck,
+    isFirstUserMessage,
   });
 
   if (!violation) return false;

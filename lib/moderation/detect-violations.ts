@@ -10,12 +10,20 @@ export async function detectViolationsAsync(input: {
   hasMedia?: boolean;
   funnelStage?: FunnelStage | null;
   skipFlowViolationCheck?: boolean;
+  isFirstUserMessage?: boolean;
 }): Promise<{ violation: ViolationResult | null; agentReason?: string }> {
-  const { text, recentUserTexts, recentInboundAt, hasMedia, funnelStage, skipFlowViolationCheck } =
-    input;
+  const {
+    text,
+    recentUserTexts,
+    recentInboundAt,
+    hasMedia,
+    funnelStage,
+    skipFlowViolationCheck,
+    isFirstUserMessage = false,
+  } = input;
 
-  /** Mechanical flood — not semantic; keep without LLM. */
-  if (isMessageFlood(recentInboundAt)) {
+  /** Mechanical flood — skip on first message; impossible to flood in one msg anyway. */
+  if (!isFirstUserMessage && isMessageFlood(recentInboundAt)) {
     return { violation: { kind: "spam", immediateBlock: true } };
   }
 
@@ -25,6 +33,7 @@ export async function detectViolationsAsync(input: {
     funnelStage,
     recentUserTexts: skipFlowViolationCheck ? [] : recentUserTexts,
     skipFlowViolationCheck,
+    isFirstUserMessage,
   });
 }
 
