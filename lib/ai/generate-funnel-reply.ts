@@ -12,6 +12,10 @@ import {
   PANDIT_NAME,
   PANDIT_VOICE,
 } from "./pandit-voice";
+import {
+  buildBirthProfileFromHistory,
+  type BirthProfile,
+} from "@/lib/funnel/birth-profile";
 
 export type FunnelReplyStage = "welcome" | "ask_details" | "reading";
 
@@ -50,6 +54,7 @@ TASK — User wrote something but birth data is incomplete:
 - ${missingLine}
 - Do NOT repeat or re-list birth date/time/place already shared in chat history.
 - Do NOT guess their problems or give remedies.
+- NEVER say "जन्म विवरण मिल गया, अब बताएं किस मुद्दे पर" — that is for AFTER reading, not now.
 - 2-4 lines, warm and human — not a template repeated every message.`;
 
   if (contactName) {
@@ -59,27 +64,43 @@ TASK — User wrote something but birth data is incomplete:
   return prompt;
 }
 
-function buildReadingPrompt(contactName?: string): string {
+function buildReadingPrompt(
+  contactName?: string,
+  birthProfile?: BirthProfile,
+): string {
+  const ageLine = birthProfile?.ageYears
+    ? `Client age (from DOB in chat): about ${birthProfile.ageYears} years — life stage: ${birthProfile.lifeStageLabel}.`
+    : `Client age: estimate from birth date in chat history if possible.`;
+
+  const hintLine = birthProfile?.readingHint
+    ? `Age-based issues to weave in naturally:\n${birthProfile.readingHint}`
+    : "";
+
   let prompt = `${PANDIT_VOICE}
 
-TASK — चरण 2: Trust phase. User just shared palm photo OR birth details.
+TASK — चरण 4: मुफ़्त विश्वास वाला पढ़ाव (Trust reading). सारा जन्म डाटा मिल चुका है।
 
-Write ONE message that:
-1. Do NOT repeat birth date/time/place — user already shared; you have it in chat history.
-2. Describe their current life problems in plain sympathetic Hindi — as if you truly see their pain.
-   Use what they mentioned (नौकरी, शादी, पैसा, etc.) from the conversation.
-   Pick 3-4 areas naturally: mental unrest, hard work not paying off, money not staying,
-   family tension, marriage delay stress, obstacles in every task, inner worry.
-3. End with empathy — e.g. feels like something is blocking every step — WITHOUT naming astrological causes.
+${ageLine}
+${hintLine}
 
-STYLE: खड़ी बोली — simple, human.
+Write ONE message where YOU tell THEM their life problems — do NOT ask them anything.
 
-${NO_PLANETS_BEFORE_PAYMENT}
+REQUIRED:
+- Proactively describe 3-4 genuine, relatable struggles — as if you studied their kundli/hastrekha.
+- Use their age/life stage (young → career/education pressure; 25-35 → job/marriage/money; 40+ → family/health/responsibility).
+- If they mentioned something earlier (नौकरी, शादी), weave it in — but still TELL problems, don't ask.
+- Write so they feel: "हाँ, यही मेरी बात है" — conviction and trust.
+- End with quiet empathy — something feels blocked in life — WITHOUT astrological jargon.
 
-CRITICAL — NEVER in this message:
-- Payment, price, consultation offer, or "परामर्श लें" — payment comes in the NEXT separate message.
-- "थोड़ा वक्त", "देख रहा हूँ", stalling, or asking for birth details again.
-- 4-6 lines, flowing text.`;
+FORBIDDEN — never write:
+- "किस मुद्दे पर मार्गदर्शन चाहिए" / "किस क्षेत्र में" / "स्वास्थ्य, शिक्षा या परिवार में से चुनें"
+- "बताएं क्या समस्या है" / asking them to specify the problem
+- Repeating full birth date, time, place in one line
+- Payment, परामर्श, price, or stalling ("देख रहा हूँ")
+
+STYLE: खड़ी बोली, 4-6 lines, flowing — like a pandit speaking from the heart.
+
+${NO_PLANETS_BEFORE_PAYMENT}`;
 
   if (contactName) {
     prompt += `\nClient name: ${contactName}.`;
@@ -113,12 +134,10 @@ function buildUserMessage(
   }
 
   if (stage === "reading") {
-    return {
-      role: "user",
-      content:
-        trimmed ||
-        "उपयोगकर्ता ने जन्म तिथि, समय और स्थान की जानकारी साझा की है।",
-    };
+    const text =
+      trimmed ||
+      "जन्म विवरण पूरा हो गया है। बिना कुछ पूछे, उनकी उम्र और हालात के हिसाब से जीवन की असली समस्याएँ बताइए — सवाल मत पूछिए।";
+    return { role: "user", content: text };
   }
 
   return {
@@ -131,6 +150,7 @@ function systemForStage(
   stage: FunnelReplyStage,
   contactName?: string,
   missingFields?: string[],
+  birthProfile?: BirthProfile,
 ): string {
   switch (stage) {
     case "welcome":
@@ -138,7 +158,7 @@ function systemForStage(
     case "ask_details":
       return buildAskDetailsPrompt(contactName, missingFields);
     case "reading":
-      return buildReadingPrompt(contactName);
+      return buildReadingPrompt(contactName, birthProfile);
   }
 }
 
@@ -166,6 +186,11 @@ export async function generateFunnelReply({
     ? await getConversationHistory(phone)
     : [];
 
+  const birthProfile =
+    stage === "reading"
+      ? buildBirthProfileFromHistory(history)
+      : undefined;
+
   const messages: ModelMessage[] = [
     ...history.map((entry) => ({
       role: entry.role,
@@ -181,7 +206,7 @@ export async function generateFunnelReply({
 
   const { text } = await generateText({
     model: languageModel,
-    system: systemForStage(stage, contactName, missingBirthFields),
+    system: systemForStage(stage, contactName, missingBirthFields, birthProfile),
     messages,
     temperature: 0.88,
     maxRetries: 1,
