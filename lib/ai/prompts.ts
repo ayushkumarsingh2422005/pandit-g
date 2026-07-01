@@ -44,7 +44,7 @@ export function buildPanditGSystemPrompt(options: {
   }
 
   if (isContinuingConversation) {
-    prompt += `\n\nबातचीत चल रही है — परिचय मत दोहराओ। पहले का इतिहास याद रखो।`;
+    prompt += `\n\nबातचीत चल रही है — परिचय मत दोहराओ। पहले का इतिहास याद रखो। जन्म विवरण दोबारा मत बताओ अगर पहले ही स्वीकार कर चुके हो। सीधे उनके आखिरी सवाल का जवाब दो।`;
   }
 
   if (hasImage) {

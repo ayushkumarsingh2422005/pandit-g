@@ -34,17 +34,23 @@ TASK — चरण 1: पहला जवाब (परिचय + विवर�
   return prompt;
 }
 
-function buildAskDetailsPrompt(contactName?: string): string {
+function buildAskDetailsPrompt(
+  contactName?: string,
+  missingFields?: string[],
+): string {
+  const missingLine =
+    missingFields && missingFields.length > 0
+      ? `Chat history shows these are STILL missing: ${missingFields.join(", ")}. Ask ONLY for these — do NOT re-confirm details already given in earlier messages.`
+      : `User has NOT sent complete birth details or palm photo yet.`;
+
   let prompt = `${PANDIT_VOICE}
 
-TASK — User wrote something BUT has NOT sent birth details or palm photo yet:
-- Briefly acknowledge what they wrote (their question or mood).
-- MUST clearly refuse to analyze without data. Say in fresh words:
-  जब तक आपकी जन्म तिथि, समय, स्थान या हस्तरेखा की फोटो नहीं मिलेगी,
-  आप सटीक समस्या, सटीक उपाय या गहन मार्गदर्शन नहीं दे सकते।
-- Do NOT guess their problems. Do NOT give remedies or planet talk.
-- Politely ask again for DOB + time + place OR clear palm photo.
-- 3-5 lines, caring but firm.`;
+TASK — User wrote something but birth data is incomplete:
+- Briefly acknowledge their latest message (1 line max).
+- ${missingLine}
+- Do NOT repeat or re-list birth date/time/place already shared in chat history.
+- Do NOT guess their problems or give remedies.
+- 2-4 lines, warm and human — not a template repeated every message.`;
 
   if (contactName) {
     prompt += `\nClient name: ${contactName}.`;
@@ -59,11 +65,11 @@ function buildReadingPrompt(contactName?: string): string {
 TASK — चरण 2: Trust phase. User just shared palm photo OR birth details.
 
 Write ONE message that:
-1. Briefly confirms what they sent (1 short line — dates/times in conversational Hindi with Arabic digits: 24, 1991, 12 baje).
-2. Describe ONLY their current life problems in plain sympathetic Hindi — as if you truly see their pain.
-   Pick 3-4 areas naturally from: mental unrest, hard work not paying off, money not staying,
+1. Do NOT repeat birth date/time/place — user already shared; you have it in chat history.
+2. Describe their current life problems in plain sympathetic Hindi — as if you truly see their pain.
+   Use what they mentioned (नौकरी, शादी, पैसा, etc.) from the conversation.
+   Pick 3-4 areas naturally: mental unrest, hard work not paying off, money not staying,
    family tension, marriage delay stress, obstacles in every task, inner worry.
-   Match their earlier questions (e.g. marriage worry → marriage delay feelings).
 3. End with empathy — e.g. feels like something is blocking every step — WITHOUT naming astrological causes.
 
 STYLE: खड़ी बोली — simple, human.
@@ -124,12 +130,13 @@ function buildUserMessage(
 function systemForStage(
   stage: FunnelReplyStage,
   contactName?: string,
+  missingFields?: string[],
 ): string {
   switch (stage) {
     case "welcome":
       return buildWelcomePrompt(contactName);
     case "ask_details":
-      return buildAskDetailsPrompt(contactName);
+      return buildAskDetailsPrompt(contactName, missingFields);
     case "reading":
       return buildReadingPrompt(contactName);
   }
@@ -141,6 +148,7 @@ export type GenerateFunnelReplyInput = {
   userMessage: string;
   contactName?: string;
   image?: UserImageInput;
+  missingBirthFields?: string[];
 };
 
 export async function generateFunnelReply({
@@ -149,6 +157,7 @@ export async function generateFunnelReply({
   userMessage,
   contactName,
   image,
+  missingBirthFields,
 }: GenerateFunnelReplyInput): Promise<string> {
   const { apiKey, model, visionModel } = getXaiConfig();
   const provider = createXai({ apiKey });
@@ -172,7 +181,7 @@ export async function generateFunnelReply({
 
   const { text } = await generateText({
     model: languageModel,
-    system: systemForStage(stage, contactName),
+    system: systemForStage(stage, contactName, missingBirthFields),
     messages,
     temperature: 0.88,
     maxRetries: 1,

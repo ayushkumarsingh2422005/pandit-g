@@ -54,9 +54,10 @@ ${NO_PLANETS_BEFORE_PAYMENT}
 
     case "unpaid":
       prompt += `TASK — User wants guidance but payment is NOT confirmed:
-- Briefly acknowledge their question — do NOT answer astrology fully (no graha/upay yet).
-- Say भुगतान अभी पुष्टि नहीं हुआ — fresh words.
-- Do NOT stall with "कुंडली देख रहा हूँ".
+- Briefly acknowledge their latest message — empathize with their concern (नौकरी, शादी, etc. if they named it).
+- Do NOT repeat birth details or "कुंडली मिल चुकी है" — they already know you have their data.
+- Do NOT answer full astrology (no graha/upay yet) — but sound human, not robotic.
+- Say भुगतान अभी पुष्टि नहीं हुआ — fresh words, not the same template every time.
 ${paymentUrl ? `- Ask to pay via link for ${sessionMinutes}-minute session:\n${paymentUrl}` : "- Ask to wait for payment link."}
 ${NO_PLANETS_BEFORE_PAYMENT}
 - 3-5 lines.`;

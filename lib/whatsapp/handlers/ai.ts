@@ -5,8 +5,13 @@ import {
 import { generatePaymentReply } from "@/lib/ai/generate-payment-reply";
 import type { PaymentReplyType } from "@/lib/ai/generate-payment-reply";
 import { generatePanditGReply } from "@/lib/ai/generate-reply";
-import { saveConversationTurn } from "@/lib/db/conversations";
-import { userProvidedDetails } from "@/lib/funnel/detect-birth-details";
+import { saveConversationTurn, getConversationHistory } from "@/lib/db/conversations";
+import { isDbConfigured } from "@/lib/db/is-configured";
+import {
+  hasCompleteBirthDetailsInHistory,
+  missingBirthFields,
+  userProvidedDetails,
+} from "@/lib/funnel/detect-birth-details";
 import { getFunnelReadingDelayMs, sleep } from "@/lib/funnel/config";
 import { resolveFunnelStage } from "@/lib/funnel/state";
 import { getConsultationAccess } from "@/lib/payments/consultation-access";
@@ -176,7 +181,15 @@ export async function handleAiMessage(message: IncomingAiMessage) {
   }
 
   const storedUserMessage = buildStoredUserMessage(message.text, hasImage);
-  const detailsProvided = userProvidedDetails(message.text, hasImage);
+  const history = isDbConfigured()
+    ? await getConversationHistory(message.from)
+    : [];
+  const detailsInMessage = userProvidedDetails(message.text, hasImage);
+  const detailsComplete = hasCompleteBirthDetailsInHistory(
+    history,
+    message.text,
+    hasImage,
+  );
   const stage = await resolveFunnelStage(message.from);
 
   const moderated = await handleConversationModeration({
@@ -184,7 +197,7 @@ export async function handleAiMessage(message: IncomingAiMessage) {
     text: message.text,
     hasMedia: hasImage,
     funnelStage: stage,
-    skipFlowViolationCheck: detailsProvided,
+    skipFlowViolationCheck: detailsInMessage || detailsComplete,
   });
   if (moderated) return;
 
@@ -208,12 +221,17 @@ export async function handleAiMessage(message: IncomingAiMessage) {
       return;
     }
 
-    if (stage === "awaiting_details" && !detailsProvided) {
+    if (stage === "awaiting_details" && !detailsComplete) {
       const reply = await generateFunnelReply({
         stage: "ask_details",
         phone: message.from,
         userMessage: message.text,
         contactName: message.contactName,
+        missingBirthFields: missingBirthFields(
+          history,
+          message.text,
+          hasImage,
+        ),
       });
       await persistTurn(
         message.from,
@@ -226,7 +244,7 @@ export async function handleAiMessage(message: IncomingAiMessage) {
       return;
     }
 
-    if (stage === "awaiting_details" && detailsProvided) {
+    if (stage === "awaiting_details" && detailsComplete) {
       await sleep(getFunnelReadingDelayMs());
 
       const reading = await generateFunnelReply({

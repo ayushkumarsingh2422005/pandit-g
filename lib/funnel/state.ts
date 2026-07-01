@@ -1,4 +1,7 @@
-import { hasBirthDetailsInText } from "./detect-birth-details";
+import {
+  hasBirthDetailsInText,
+  hasCompleteBirthDetailsInHistory,
+} from "./detect-birth-details";
 import {
   getConversationHistory,
   getConversationFunnelStage,
@@ -20,11 +23,23 @@ function inferStageFromHistory(
   const assistantCount = messages.filter((m) => m.role === "assistant").length;
   if (assistantCount === 0) return "initial";
 
+  const detailsComplete = hasCompleteBirthDetailsInHistory(messages);
+  if (!detailsComplete) return "awaiting_details";
+
   let detailsMessageIndex = -1;
   for (let i = 0; i < messages.length; i++) {
     if (messages[i].role === "user" && userSharedDetails(messages[i].content)) {
       detailsMessageIndex = i;
       break;
+    }
+  }
+
+  if (detailsMessageIndex < 0) {
+    for (let i = 0; i < messages.length; i++) {
+      if (messages[i].role === "user") {
+        detailsMessageIndex = i;
+        break;
+      }
     }
   }
 
