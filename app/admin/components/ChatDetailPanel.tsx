@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AdminBackButton } from "./AdminBackButton";
 
 type Message = {
   id: string;
@@ -147,16 +148,28 @@ export function ChatDetailPanel({ phone }: Props) {
 
   if (loading) {
     return (
-      <div className="flex flex-1 items-center justify-center text-[#8696a0]">
-        Loading chat…
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="admin-safe-top flex items-center gap-2 border-b border-[#222d34] bg-[#202c33] px-2 py-2 md:hidden">
+          <AdminBackButton />
+          <span className="text-sm text-[#8696a0]">Loading…</span>
+        </div>
+        <div className="flex flex-1 items-center justify-center text-[#8696a0]">
+          Loading chat…
+        </div>
       </div>
     );
   }
 
   if (!conversation) {
     return (
-      <div className="flex flex-1 items-center justify-center text-[#8696a0]">
-        Chat not found
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="admin-safe-top flex items-center gap-2 border-b border-[#222d34] bg-[#202c33] px-2 py-2 md:hidden">
+          <AdminBackButton />
+          <span className="text-sm text-[#8696a0]">Chat</span>
+        </div>
+        <div className="flex flex-1 items-center justify-center text-[#8696a0]">
+          Chat not found
+        </div>
       </div>
     );
   }
@@ -165,8 +178,9 @@ export function ChatDetailPanel({ phone }: Props) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-[#222d34] bg-[#202c33] px-4 py-2">
-        <div className="flex min-w-0 items-center gap-3">
+      <header className="admin-safe-top flex shrink-0 items-center justify-between gap-2 border-b border-[#222d34] bg-[#202c33] px-2 py-2 md:gap-3 md:px-4">
+        <div className="flex min-w-0 flex-1 items-center gap-1 md:gap-3">
+          <AdminBackButton />
           <div
             className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm text-white ${
               conversation.blocked ? "bg-red-900/60" : "bg-[#6b7b85]"
@@ -174,59 +188,80 @@ export function ChatDetailPanel({ phone }: Props) {
           >
             {(conversation.clientName || phone).slice(0, 1).toUpperCase()}
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h1 className="truncate text-[16px] text-[#e9edef]">
               {displayName}
             </h1>
-            <p className="truncate text-xs text-[#8696a0]">
-              {conversation.phone}
-              {conversation.funnelStage
-                ? ` · ${conversation.funnelStage}`
-                : ""}
-              {conversation.blocked
-                ? ` · ${formatBlockReason(conversation.blockReason)}`
-                : ""}
-              {typeof conversation.abuseStrikes === "number" &&
-              conversation.abuseStrikes > 0
-                ? ` · ${conversation.abuseStrikes} strike(s)`
-                : ""}
+            <p className="truncate text-[11px] text-[#8696a0] md:text-xs">
+              <span className="md:hidden">{conversation.phone}</span>
+              <span className="hidden md:inline">
+                {conversation.phone}
+                {conversation.funnelStage
+                  ? ` · ${conversation.funnelStage}`
+                  : ""}
+                {conversation.blocked
+                  ? ` · ${formatBlockReason(conversation.blockReason)}`
+                  : ""}
+                {typeof conversation.abuseStrikes === "number" &&
+                conversation.abuseStrikes > 0
+                  ? ` · ${conversation.abuseStrikes} strike(s)`
+                  : ""}
+              </span>
             </p>
           </div>
         </div>
-        <div className="flex shrink-0 gap-1">
+        <div className="flex shrink-0 gap-0.5">
           {conversation.blocked ? (
             <button
               type="button"
               disabled={actionLoading}
               onClick={() => runAction("unblock")}
-              className="rounded px-3 py-1.5 text-xs text-[#00a884] hover:bg-[#2a3942]"
+              className="rounded px-2 py-2 text-xs text-[#00a884] hover:bg-[#2a3942] md:px-3 md:py-1.5"
             >
-              Unblock
+              <span className="hidden sm:inline">Unblock</span>
+              <span className="sm:hidden" aria-hidden>
+                ✓
+              </span>
             </button>
           ) : (
             <button
               type="button"
               disabled={actionLoading}
               onClick={() => runAction("block", { reason: "admin_manual" })}
-              className="rounded px-3 py-1.5 text-xs text-red-400 hover:bg-[#2a3942]"
+              className="rounded px-2 py-2 text-xs text-red-400 hover:bg-[#2a3942] md:px-3 md:py-1.5"
             >
-              Block
+              <span className="hidden sm:inline">Block</span>
+              <span className="sm:hidden" aria-hidden>
+                ⊗
+              </span>
             </button>
           )}
           <button
             type="button"
             disabled={actionLoading}
             onClick={deleteChat}
-            className="rounded px-3 py-1.5 text-xs text-[#8696a0] hover:bg-[#2a3942] hover:text-[#e9edef]"
+            className="rounded px-2 py-2 text-xs text-[#8696a0] hover:bg-[#2a3942] hover:text-[#e9edef] md:px-3 md:py-1.5"
+            title="Delete chat"
           >
-            Delete chat
+            <span className="hidden sm:inline">Delete</span>
+            <svg
+              className="h-4 w-4 sm:hidden"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+              />
+            </svg>
           </button>
         </div>
       </header>
 
-      <div
-        className="admin-chat-bg min-h-0 flex-1 overflow-y-auto px-[6%] py-3"
-      >
+      <div className="admin-chat-bg min-h-0 flex-1 overflow-y-auto px-2 py-2 md:px-[6%] md:py-3">
         <div className="mx-auto flex max-w-3xl flex-col gap-1">
           {conversation.messages.length === 0 ? (
             <p className="py-12 text-center text-sm text-[#8696a0]">
@@ -242,7 +277,7 @@ export function ChatDetailPanel({ phone }: Props) {
                   key={msg.id}
                   className={`group flex ${isUser ? "justify-start" : "justify-end"}`}
                 >
-                  <div className="relative max-w-[70%]">
+                  <div className="relative max-w-[88%] md:max-w-[70%]">
                     {isEditing ? (
                       <div className="rounded-lg bg-[#2a3942] p-2">
                         <textarea
@@ -292,8 +327,10 @@ export function ChatDetailPanel({ phone }: Props) {
                           </span>
                         </div>
                         <div
-                          className={`absolute top-0 flex gap-0.5 opacity-0 transition group-hover:opacity-100 ${
-                            isUser ? "right-0 translate-x-full pl-1" : "left-0 -translate-x-full pr-1"
+                          className={`admin-msg-actions absolute top-0 flex gap-0.5 opacity-0 transition group-hover:opacity-100 ${
+                            isUser
+                              ? "right-0 translate-x-full pl-1"
+                              : "left-0 -translate-x-full pr-1"
                           }`}
                         >
                           <button
@@ -304,7 +341,7 @@ export function ChatDetailPanel({ phone }: Props) {
                               setEditingId(msg.id);
                               setEditDraft(msg.content);
                             }}
-                            className="rounded bg-[#2a3942] p-1.5 text-[#8696a0] hover:text-[#e9edef]"
+                            className="rounded bg-[#2a3942] p-2 text-[#8696a0] hover:text-[#e9edef] md:p-1.5"
                           >
                             <svg
                               className="h-3.5 w-3.5"
@@ -327,7 +364,7 @@ export function ChatDetailPanel({ phone }: Props) {
                               e.stopPropagation();
                               deleteMessage(msg.id);
                             }}
-                            className="rounded bg-[#2a3942] p-1.5 text-red-400 hover:text-red-300"
+                            className="rounded bg-[#2a3942] p-2 text-red-400 hover:text-red-300 md:p-1.5"
                           >
                             <svg
                               className="h-3.5 w-3.5"
@@ -355,7 +392,7 @@ export function ChatDetailPanel({ phone }: Props) {
         </div>
       </div>
 
-      <footer className="shrink-0 border-t border-[#222d34] bg-[#202c33] px-4 py-3">
+      <footer className="admin-safe-bottom shrink-0 border-t border-[#222d34] bg-[#202c33] px-2 py-2 md:px-4 md:py-3">
         {status ? (
           <p className="mb-2 text-center text-xs text-[#00a884]">{status}</p>
         ) : null}

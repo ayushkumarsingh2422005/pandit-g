@@ -94,7 +94,7 @@ export function ChatListPanel({
               <li key={row.phone}>
                 <Link
                   href={`/admin/chats/${encodeURIComponent(row.phone)}`}
-                  className={`flex items-center gap-3 border-b border-[#222d34]/80 px-3 py-3 transition ${
+                  className={`flex items-center gap-3 border-b border-[#222d34]/80 px-3 py-3.5 transition active:bg-[#2a3942] md:py-3 ${
                     active ? "bg-[#2a3942]" : "hover:bg-[#202c33]"
                   }`}
                 >

@@ -22,6 +22,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   const isPayments = pathname.startsWith("/admin/payments");
+  const isChatDetail = Boolean(selectedPhone);
+
+  /** Mobile: one pane at a time — list OR detail/payments (like WhatsApp app). */
+  const showListMobile = !isChatDetail && !isPayments;
+  const showMainMobile = isChatDetail || isPayments;
 
   async function logout() {
     await fetch("/api/admin/auth", { method: "DELETE" });
@@ -30,20 +35,23 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="admin-wa flex h-screen overflow-hidden bg-[#111b21] text-[#e9edef]">
-      {/* Left panel — WhatsApp chat list */}
-      <aside className="flex w-full max-w-[420px] shrink-0 flex-col border-r border-[#222d34] bg-[#111b21]">
-        {/* Top bar */}
-        <div className="flex shrink-0 items-center justify-between bg-[#202c33] px-4 py-3">
-          <div>
+    <div className="admin-wa admin-shell flex overflow-hidden bg-[#111b21] text-[#e9edef]">
+      {/* Left panel — chat list */}
+      <aside
+        className={`flex w-full flex-col border-[#222d34] bg-[#111b21] md:max-w-[420px] md:shrink-0 md:border-r ${
+          showListMobile ? "flex" : "hidden md:flex"
+        }`}
+      >
+        <div className="admin-safe-top flex shrink-0 items-center justify-between bg-[#202c33] px-3 py-2.5 md:px-4 md:py-3">
+          <div className="min-w-0">
             <p className="text-[15px] font-medium text-[#e9edef]">Pandit G</p>
             <p className="text-xs text-[#8696a0]">Admin</p>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5">
             <Link
               href="/admin/payments"
               title="Payments"
-              className={`rounded-full p-2 transition ${
+              className={`rounded-full p-2.5 transition ${
                 isPayments
                   ? "bg-[#2a3942] text-[#00a884]"
                   : "text-[#8696a0] hover:bg-[#2a3942] hover:text-[#e9edef]"
@@ -67,7 +75,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
               type="button"
               onClick={logout}
               title="Log out"
-              className="rounded-full p-2 text-[#8696a0] transition hover:bg-[#2a3942] hover:text-[#e9edef]"
+              className="rounded-full p-2.5 text-[#8696a0] transition hover:bg-[#2a3942] hover:text-[#e9edef]"
             >
               <svg
                 className="h-5 w-5"
@@ -86,9 +94,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        {/* Search */}
         <div className="shrink-0 border-b border-[#222d34] bg-[#111b21] px-3 py-2">
-          <div className="flex items-center gap-2 rounded-lg bg-[#202c33] px-3 py-1.5">
+          <div className="flex items-center gap-2 rounded-lg bg-[#202c33] px-3 py-2">
             <svg
               className="h-4 w-4 shrink-0 text-[#8696a0]"
               fill="none"
@@ -106,21 +113,20 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search or start new chat"
-              className="w-full bg-transparent text-sm text-[#e9edef] outline-none placeholder:text-[#8696a0]"
+              placeholder="Search chats"
+              className="w-full bg-transparent text-base text-[#e9edef] outline-none placeholder:text-[#8696a0] md:text-sm"
             />
           </div>
         </div>
 
-        {/* Filter tabs */}
         <div className="flex shrink-0 gap-2 border-b border-[#222d34] px-3 py-2">
           <button
             type="button"
             onClick={() => setListFilter("all")}
-            className={`rounded-full px-3 py-1 text-xs ${
+            className={`rounded-full px-3 py-1.5 text-xs ${
               listFilter === "all"
                 ? "bg-[#00a884] text-white"
-                : "bg-[#202c33] text-[#8696a0] hover:text-[#e9edef]"
+                : "bg-[#202c33] text-[#8696a0]"
             }`}
           >
             All chats
@@ -128,19 +134,18 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           <button
             type="button"
             onClick={() => setListFilter("blocked")}
-            className={`rounded-full px-3 py-1 text-xs ${
+            className={`rounded-full px-3 py-1.5 text-xs ${
               listFilter === "blocked"
                 ? "bg-red-600 text-white"
-                : "bg-[#202c33] text-[#8696a0] hover:text-[#e9edef]"
+                : "bg-[#202c33] text-[#8696a0]"
             }`}
           >
             Blocked
           </button>
         </div>
 
-        {/* Chats label when on payments */}
         {isPayments ? (
-          <div className="shrink-0 px-4 py-2 text-xs text-[#8696a0]">
+          <div className="hidden shrink-0 px-4 py-2 text-xs text-[#8696a0] md:block">
             <Link href="/admin/chats" className="text-[#00a884] hover:underline">
               ← Back to chats
             </Link>
@@ -154,8 +159,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         />
       </aside>
 
-      {/* Right panel — chat / payments / empty */}
-      <main className="flex min-w-0 flex-1 flex-col bg-[#0b141a]">
+      {/* Right panel — chat / payments / empty (desktop only when no selection) */}
+      <main
+        className={`min-w-0 flex-1 flex-col bg-[#0b141a] ${
+          showMainMobile ? "flex" : "hidden md:flex"
+        }`}
+      >
         {children}
       </main>
     </div>
