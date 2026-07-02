@@ -87,6 +87,12 @@ export async function generatePanditGReply({
     buildUserModelMessage(userMessage, image),
   ];
 
+  const isPaidSession = funnelStage === "active";
+  const recentAssistantTexts = history
+    .filter((e) => e.role === "assistant")
+    .map((e) => e.content)
+    .slice(-3);
+
   const languageModel = hasImage
     ? provider.chat(visionModel)
     : provider.responses(model);
@@ -97,11 +103,12 @@ export async function generatePanditGReply({
       contactName,
       isContinuingConversation,
       hasImage,
-      isPaidSession: funnelStage === "active",
+      isPaidSession,
       sessionMinutesRemaining,
+      recentAssistantTexts,
     }),
     messages,
-    temperature: 0.88,
+    temperature: isPaidSession ? 0.93 : 0.88,
     maxRetries: 1,
   });
 

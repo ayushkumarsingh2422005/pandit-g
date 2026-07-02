@@ -22,12 +22,25 @@ ${ARABIC_NUMERALS_RULE}
 - AI/बॉट का ज़िक्र
 - Roman Hindi जवाब में`;
 
+function formatRecentReplies(snippets: string[]): string {
+  if (snippets.length === 0) return "";
+  const lines = snippets
+    .slice(-3)
+    .map((s, i) => `${i + 1}. ${s.slice(0, 280)}`)
+    .join("\n");
+  return `
+
+आपके हाल के जवाब इसी चैट में (इन्हें दोहराएँ मत — न वही ग्रह, न वही उपाय, न वही शब्द):
+${lines}`;
+}
+
 export function buildPanditGSystemPrompt(options: {
   contactName?: string;
   isContinuingConversation: boolean;
   hasImage?: boolean;
   isPaidSession?: boolean;
   sessionMinutesRemaining?: number;
+  recentAssistantTexts?: string[];
 }): string {
   const {
     contactName,
@@ -35,6 +48,7 @@ export function buildPanditGSystemPrompt(options: {
     hasImage,
     isPaidSession,
     sessionMinutesRemaining,
+    recentAssistantTexts = [],
   } = options;
 
   let prompt = PANDIT_G_BASE_PROMPT;
@@ -44,7 +58,7 @@ export function buildPanditGSystemPrompt(options: {
   }
 
   if (isContinuingConversation) {
-    prompt += `\n\nबातचीत चल रही है — परिचय मत दोहराओ। पहले का इतिहास याद रखो। जन्म विवरण दोबारा मत बताओ अगर पहले ही स्वीकार कर चुके हो। सीधे उनके आखिरी सवाल का जवाब दो।`;
+    prompt += `\n\nबातचीत चल रही है — परिचय मत दोहराओ। पूरा इतिहास पढ़ो। जन्म विवरण दोबारा मत बताओ। सीधे उनके आखिरी सवाल का जवाब दो।`;
   }
 
   if (hasImage) {
@@ -54,12 +68,25 @@ export function buildPanditGSystemPrompt(options: {
   if (isPaidSession) {
     prompt += `
 
-━━━ चरण 4: भुगतान के बाद — पूरा परामर्श ━━━
-- अब ग्रह, नक्षत्र, दशा, उपाय बता सकते हैं — यह भुगतान वाला सत्र है।
-- पहले ज़रूरत हो तो संक्षिप्त पृष्ठभूमि, फिर सीधे उपाय और मार्गदर्शन दो।
-- रुकावटों की वजह समझाओ और आसान, अचूक उपाय बताओ।
-${sessionMinutesRemaining ? `- लगभग ${sessionMinutesRemaining} मिनट बचे हैं।` : ""}
-- गहराई से, स्पष्ट खड़ी बोली में।`;
+━━━ भुगतान के बाद — इसी इंसान के साथ असली परामर्श ━━━
+
+पूरा चैट पढ़ो — उनकी जन्म तिथि/समय/स्थान, उनके सवाल, और तुमने पहले क्या कहा।
+
+हर जवाब इस व्यक्ति के लिए अलग लगना चाहिए — कोई फिक्स्ड फॉर्मूला नहीं:
+- कोई चीट-शीट मत चलाओ (जैसे हर प्रेम सवाल पर शुक्र, हर नौकरी पर शनि) — ऐसा रोबोटिक लगता है।
+- जो ग्रह, भाव, दशा या उपाय इस बार सही लगे वो बताओ — पिछली बार जो बोले थे वो दोहराओ मत।
+- हर मैसेज पर ग्रह का नाम या उपाय की लिस्ट ज़रूरी नहीं।
+
+बातचीत का स्वाभाविक लहज़ा (चेकलिस्ट नहीं):
+- कभी पहले समस्या/हालात — वो क्या महसूस कर रहे हैं।
+- कारण या ज्योतिषीय बात जब सही लगे या जब पूछें — हर बार नहीं।
+- उपाय जब पूछें या जब बात वहाँ पहुँचे — हर बार ऑटोमैटिक नहीं।
+
+टेम्पलेट जैसा मत लिखो: हर बार "शनि-राहु... तिल... चालीसा... सिंदूर" — यह मना है।
+नंबर वाली उपाय लिस्ट मत दो। पिछला पैराग्राफ कॉपी मत करो।
+${formatRecentReplies(recentAssistantTexts)}
+${sessionMinutesRemaining ? `\nसत्र: लगभग ${sessionMinutesRemaining} मिनट बचे।` : ""}
+4-7 पंक्तियाँ, बहती हुई खड़ी बोली।`;
   }
 
   prompt += `\n\nयाद रखो: ${PANDIT_NAME}, ${PANDIT_CITY} — सहानुभूति, स्पष्ट हिंदी।`;
