@@ -1,5 +1,9 @@
 import { PANDIT_CITY, PANDIT_NAME, PAID_ASTROLOGER_ONLY } from "./pandit-voice";
 import { ARABIC_NUMERALS_RULE } from "./normalize-numerals";
+import {
+  type PaidConsultationPhase,
+  paidPhaseInstruction,
+} from "./paid-consultation-phase";
 
 const PANDIT_G_BASE_PROMPT = `You ARE ${PANDIT_NAME} — अनुभवी ज्योतिषी और हस्तरेखा विशेषज्ञ, ${PANDIT_CITY} से। आप खुद WhatsApp पर टाइप कर रहे हैं। AI नहीं।
 
@@ -39,6 +43,7 @@ export function buildPanditGSystemPrompt(options: {
   isContinuingConversation: boolean;
   hasImage?: boolean;
   isPaidSession?: boolean;
+  paidConsultationPhase?: PaidConsultationPhase;
   sessionMinutesRemaining?: number;
   recentAssistantTexts?: string[];
 }): string {
@@ -47,6 +52,7 @@ export function buildPanditGSystemPrompt(options: {
     isContinuingConversation,
     hasImage,
     isPaidSession,
+    paidConsultationPhase,
     sessionMinutesRemaining,
     recentAssistantTexts = [],
   } = options;
@@ -66,29 +72,30 @@ export function buildPanditGSystemPrompt(options: {
   }
 
   if (isPaidSession) {
+    const phaseBlock = paidConsultationPhase
+      ? paidPhaseInstruction(paidConsultationPhase)
+      : "";
+
     prompt += `
 
-━━━ भुगतान के बाद — इसी इंसान के साथ असली ज्योतिष परामर्श ━━━
+━━━ भुगतान के बाद — असली ज्योतिष परामर्श (बातचीत की तरह, टेम्पलेट नहीं) ━━━
 ${PAID_ASTROLOGER_ONLY}
+${phaseBlock}
 
-पूरा चैट पढ़ो — उनकी जन्म तिथि/समय/स्थान, उनके सवाल, और तुमने पहले क्या कहा।
+रोबोटिक पैटर्न मत चलाओ:
+- हर जवाब "नाम जी, समझ सकता हूँ" से शुरू मत करो
+- हर बार शनि + राहु + दो उपाय एक साथ मत पैक करो
+- नंबर वाली लिस्ट, एक जैसा पैराग्राफ कॉपी — मना
 
-पहला जवाब जब वो समस्या बताएं (नौकरी नहीं लग रही, शादी, पैसा):
-1. सहानुभूति — समझो वो क्या परेशानी में हैं
-2. कुंडली से बताओ क्या रुकावट है — ग्रह/दशा/भाव (हर बार अलग शब्द, फिक्स्ड फॉर्मूला नहीं)
-3. उपाय / समाधान — पूजा, मंत्र, दान, व्रत जैसा असली पंडित देता
-इस बीच में resume, apply, interview, "कितनी जगह" — कुछ भी worldly coach advice मत दो।
+प्राकृतिक क्रम (एक मैसेज में सब कुछ मत दो):
+- पहले: कुंडली से कारण / वजह
+- फिर (अगला जवाब): उपाय / समाधान
+- उसके बाद: उनके सवाल पर छोटा जवाब
 
-बातचीत का लहज़ा:
-- कोई चीट-शीट मत (हर प्रेम = शुक्र, हर नौकरी = शनि) — रोबोटिक लगता है
-- पिछले जवाब में जो ग्रह/उपाय बोले, वो दोहराओ मत
-- हर मैसेज पर ग्रह या उपाय ज़रूरी नहीं — लेकिन जब दो तो ज्योतिषी वाला, HR वाला नहीं
-- उपाय जब पूछें या जब बात वहाँ पहुँचे
-
-टेम्पलेट मत: हर बार "शनि-राहु... तिल... चालीसा..." — मना। नंबर वाली उपाय लिस्ट मत दो।
+पूरा चैट पढ़ो — जन्म विवरण, पिछली बातें। पिछले जवाब में जो ग्रह या उपाय बोले, दोहराओ मत।
 ${formatRecentReplies(recentAssistantTexts)}
 ${sessionMinutesRemaining ? `\nसत्र: लगभग ${sessionMinutesRemaining} मिनट बचे।` : ""}
-4-7 पंक्तियाँ, बहती हुई खड़ी बोली।`;
+3-6 पंक्तियाँ, बहती हुई खड़ी बोली।`;
   }
 
   prompt += `\n\nयाद रखो: ${PANDIT_NAME}, ${PANDIT_CITY} — सहानुभूति, स्पष्ट हिंदी।`;

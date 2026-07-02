@@ -10,6 +10,7 @@ import { isDbConfigured } from "@/lib/db/is-configured";
 import { getXaiConfig } from "./config";
 import { normalizeReplyNumerals } from "./normalize-numerals";
 import { buildPanditGSystemPrompt } from "./prompts";
+import { detectPaidConsultationPhase } from "./paid-consultation-phase";
 
 export type UserImageInput = {
   data: Uint8Array;
@@ -92,6 +93,9 @@ export async function generatePanditGReply({
     .filter((e) => e.role === "assistant")
     .map((e) => e.content)
     .slice(-3);
+  const paidConsultationPhase = isPaidSession
+    ? detectPaidConsultationPhase(history, userMessage)
+    : undefined;
 
   const languageModel = hasImage
     ? provider.chat(visionModel)
@@ -104,6 +108,7 @@ export async function generatePanditGReply({
       isContinuingConversation,
       hasImage,
       isPaidSession,
+      paidConsultationPhase,
       sessionMinutesRemaining,
       recentAssistantTexts,
     }),
