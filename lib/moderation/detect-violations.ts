@@ -22,9 +22,9 @@ export async function detectViolationsAsync(input: {
     isFirstUserMessage = false,
   } = input;
 
-  /** Mechanical flood — skip on first message; impossible to flood in one msg anyway. */
+  /** Mechanical flood — counts as a strike; block only after strike threshold. */
   if (!isFirstUserMessage && isMessageFlood(recentInboundAt)) {
-    return { violation: { kind: "spam", immediateBlock: true } };
+    return { violation: { kind: "spam", immediateBlock: false } };
   }
 
   return classifyMessageWithAgent({

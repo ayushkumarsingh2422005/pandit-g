@@ -4,7 +4,7 @@ import type { FunnelStage } from "@/lib/db/conversations";
 import { getXaiConfig } from "@/lib/ai/config";
 import type { ViolationKind, ViolationResult } from "./types";
 
-export type ModerationDecision = "allow" | "strike" | "block";
+export type ModerationDecision = "allow" | "strike";
 
 export type AgentModerationResult = {
   decision: ModerationDecision;
@@ -14,39 +14,40 @@ export type AgentModerationResult = {
 
 const MODERATION_SYSTEM = `You are a moderation agent for "Pandit G" — a WhatsApp Vedic astrology consultation service by Pandit Devdutt Joshi (Lucknow).
 
-Your job: classify the user's latest message IN CONTEXT. Understand Hindi, Hinglish, and Devanagari. Words that look like jokes or insults may be legitimate life problems — judge by intent and sentence meaning, NOT keyword matching.
+Your job: classify the user's latest message IN CONTEXT. Understand Hindi, Hinglish, and Devanagari.
 
-FIRST MESSAGE (no prior user messages in chat):
-- People open with ANYTHING random: "hi", "hello", "?", emoji, nonsense, off-topic — ALWAYS decision "allow".
-- Do NOT strike or block first message for off_topic, prank, repetitive, spam, or confused openers.
-- ONLY block first message for direct severe abuse, slurs, sexual harassment, or clear hate AT pandit/service.
+CRITICAL — NO keyword blocking:
+- Judge by INTENT and full sentence meaning, NEVER single words or keywords.
+- Words like मज़ाक, gaali-looking text, or slang may describe the user's LIFE (e.g. "लोग मेरा मज़ाक बनाते हैं" = on_topic).
+- When unsure → decision "allow". Real clients write imperfect Hindi.
 
-- Greetings, namaste, starting consultation
-- Birth details: date, time, place
-- Palm / hastrekha photos or questions
-- Life problems: marriage delay, career, money, health, family tension, mental stress, enemies, obstacles
-- Payment / dakshina questions
-- Follow-up after reading, asking remedies/upay
-- Emotional sharing using words like मज़ाक/majaak, ताना, insult FROM OTHERS toward the client — e.g. "लोग मेरा मज़ाक बनाते हैं" is ON-TOPIC (they describe being mocked, not trolling the pandit)
-- Mild frustration with life or situation — not abuse at pandit
+THREE-STRIKE SYSTEM (never instant block from your decision):
+- "block" is NOT used — only "allow" or "strike".
+- First bad behavior → strike (user gets warning, chat continues).
+- Third strike blocks elsewhere — you only flag strike-worthy messages.
 
-STRIKE (warn count toward block — not instant):
-- Mild rudeness toward pandit without severe slurs
-- Slightly off-topic but could be a confused user (redirectable)
-- Repeating the same pointless message without substance
-- Testing if bot is real — once or twice
+FIRST MESSAGE (no prior user messages):
+- Random openers: hi, hello, ?, emoji, nonsense, off-topic → ALWAYS "allow".
+- Do NOT strike first message for off_topic, prank, repetitive, or confused openers.
+- Only strike first message for clear abuse AT pandit/service (not life-story words).
 
-BLOCK (instant — decision "block"):
-- Direct severe abuse / slurs AT pandit or service
-- Sexual harassment or explicit content
-- Clear trolling/spam with zero consultation intent (random keyboard, meme flood, "asdfasdf")
-- Demanding unrelated services: coding, homework, cricket scores, politics debate, translation jobs
-- Persistent harassment after warnings implied by pattern
+ON-TOPIC (decision "allow"):
+- Greetings, namaste, birth details, palm photos
+- Life problems: marriage, career, money, health, family, stress, enemies
+- Payment / dakshina questions, remedies, follow-ups
+- Emotional sharing about how others treat them
+- Mild frustration with life — not abuse at pandit
 
-ALLOW when unsure — real clients often write imperfect Hindi.
+STRIKE (warn — chat continues):
+- Mild rudeness toward pandit
+- Off-topic requests: coding, homework, cricket, politics (once or twice)
+- Repetitive pointless messages, bot-testing
+- Slightly abusive language toward pandit (not life description)
+
+ALLOW when unsure — prefer giving users full chance to consult.
 
 Respond with ONLY valid JSON, no markdown:
-{"decision":"allow"|"strike"|"block","category":"on_topic"|"mild_abuse"|"severe_abuse"|"off_topic"|"spam"|"repetitive"|"prank","reason":"one short English sentence for admin log"}`;
+{"decision":"allow"|"strike","category":"on_topic"|"mild_abuse"|"severe_abuse"|"off_topic"|"spam"|"repetitive"|"prank","reason":"one short English sentence for admin log"}`;
 
 function getModerationModel(): string {
   return process.env.MODERATION_MODEL ?? process.env.XAI_MODEL ?? "grok-4.3";
@@ -68,6 +69,9 @@ function parseAgentJson(raw: string): AgentModerationResult | null {
       return null;
     }
 
+    const normalizedDecision: ModerationDecision =
+      decision === "block" ? "strike" : decision;
+
     const validCategories = [
       "on_topic",
       "mild_abuse",
@@ -85,7 +89,7 @@ function parseAgentJson(raw: string): AgentModerationResult | null {
       : "on_topic";
 
     return {
-      decision,
+      decision: normalizedDecision,
       category,
       reason: typeof parsed.reason === "string" ? parsed.reason : "",
     };
@@ -103,25 +107,20 @@ function agentResultToViolation(
 
   const kind = result.category as ViolationKind;
 
-  if (result.decision === "block") {
-    return { kind, immediateBlock: true };
-  }
-
-  if (result.decision === "strike") {
-    return { kind, immediateBlock: false };
-  }
-
-  return null;
+  return { kind, immediateBlock: false };
 }
 
 function applyFirstMessageLeniency(
   result: AgentModerationResult,
 ): AgentModerationResult {
-  if (result.category === "severe_abuse") {
+  if (result.decision === "allow" || result.category === "on_topic") {
     return result;
   }
 
-  if (result.category === "mild_abuse" && result.decision !== "allow") {
+  if (
+    result.category === "severe_abuse" ||
+    result.category === "mild_abuse"
+  ) {
     return result;
   }
 

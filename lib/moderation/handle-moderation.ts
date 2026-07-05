@@ -13,6 +13,7 @@ import {
   detectViolationsAsync,
   violationToBlockReason,
 } from "./detect-violations";
+import { getModerationWarningForStrike } from "./warning-messages";
 
 export async function sendBlockedMessage(to: string): Promise<void> {
   await sendTextMessage({ to, body: BLOCKED_CONVERSATION_MESSAGE });
@@ -20,6 +21,7 @@ export async function sendBlockedMessage(to: string): Promise<void> {
 
 /**
  * Returns true if the message was handled (blocked user — no AI reply needed).
+ * Strikes 1–2 send a warning and the conversation continues.
  */
 export async function handleConversationModeration(input: {
   phone: string;
@@ -62,17 +64,18 @@ export async function handleConversationModeration(input: {
     console.info(`[moderation] ${phone}: ${violation.kind} — ${agentReason}`);
   }
 
-  if (violation.immediateBlock) {
+  const strikes = await incrementAbuseStrike(phone);
+  const threshold = getAbuseStrikeThreshold();
+
+  if (strikes >= threshold) {
     await blockConversation(phone, violationToBlockReason(violation.kind));
     await sendBlockedMessage(phone);
     return true;
   }
 
-  const strikes = await incrementAbuseStrike(phone);
-  if (strikes >= getAbuseStrikeThreshold()) {
-    await blockConversation(phone, violationToBlockReason(violation.kind));
-    await sendBlockedMessage(phone);
-    return true;
+  const warning = getModerationWarningForStrike(strikes);
+  if (warning) {
+    await sendTextMessage({ to: phone, body: warning });
   }
 
   return false;

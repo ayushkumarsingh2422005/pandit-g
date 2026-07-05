@@ -3,7 +3,7 @@ import { isDbConfigured } from "./is-configured";
 import { getFloodWindowMs } from "@/lib/moderation/detect-spam";
 
 const COLLECTION = "conversations";
-const DEFAULT_STRIKE_THRESHOLD = 2;
+const DEFAULT_STRIKE_THRESHOLD = 3;
 const INBOUND_TS_KEEP = 12;
 
 function getStrikeThreshold(): number {
