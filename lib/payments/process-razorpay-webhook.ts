@@ -6,7 +6,7 @@ import { sendTextMessage } from "@/lib/whatsapp/client";
 
 function buildPaymentSuccessMessage(contactName: string | undefined): string {
   const greeting = contactName ? `${contactName} जी, ` : "";
-  return `${greeting}दक्षिणा प्राप्त हुई। अब अपनी परेशानी लिखिए — कुंडली देखकर बताऊँगा किस ग्रह या दशा से रुकावट है और कौन से उपाय से राह खुलेगी।`;
+  return `${greeting}दक्षिणा प्राप्त हुई। अब जो भी दिल पर लगा हो वो लिखिए — सुनकर आगे बात करते हैं।`;
 }
 
 type RazorpayWebhookPayload = {

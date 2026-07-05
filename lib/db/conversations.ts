@@ -28,8 +28,8 @@ export type FunnelStage =
   | "active";
 
 const COLLECTION = "conversations";
-const DEFAULT_HISTORY_LIMIT = 20;
-const DEFAULT_STORED_MESSAGES = 40;
+const DEFAULT_HISTORY_LIMIT = 40;
+const DEFAULT_STORED_MESSAGES = 80;
 
 function getHistoryLimit(): number {
   const parsed = Number(process.env.CHAT_HISTORY_LIMIT);

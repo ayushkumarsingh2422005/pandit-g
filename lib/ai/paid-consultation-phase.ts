@@ -1,25 +1,18 @@
+import {
+  getConsultationProgress,
+  userIsFrustratedWithBot,
+} from "./consultation-context";
+
 export type PaidConsultationPhase =
   | "discuss_problem"
   | "explain_astro_cause"
   | "give_remedy"
-  | "follow_up";
+  | "follow_up"
+  | "reassure_and_answer";
 
 type HistoryEntry = { role: string; content: string };
 
-const ASTRO_TERMS =
-  /ग्रह|दशा|भाव|नक्षत्र|कुंडली|शनि|राहु|केतु|गुरु|शुक्र|मंगल|बुध|चंद्र|सूर्य|दृष्टि|महादशा|अंतर्दशा|योग|लग्न/;
-const REMEDY =
-  /दान|पूजा|मंत्र|जाप|व्रत|पाठ|उपाय|निवारण|तिल|सिंदूर|चालीसा|अर्चन|धूप|दीप|हवन|समाधान/;
 const PAYMENT_ACK = /दक्षिणा प्राप्त/;
-const NEW_CONCERN =
-  /नौकरी|नौकर|शादी|विवाह|पैसा|धन|प्रेम|रिश्त|परिवार|स्वास्थ्य|पढ़ाई|करियर|व्यापार|बिज़नेस|job|marriage|money|career/i;
-
-function lastAssistantMessage(history: HistoryEntry[]): string {
-  for (let i = history.length - 1; i >= 0; i -= 1) {
-    if (history[i]?.role === "assistant") return history[i].content;
-  }
-  return "";
-}
 
 function userShortAck(userMessage: string): boolean {
   const trimmed = userMessage.trim();
@@ -30,49 +23,66 @@ function userShortAck(userMessage: string): boolean {
 }
 
 function userAsksRemedy(userMessage: string): boolean {
-  return /उपाय|समाधान|निवारण|क्या करूँ|क्या करूं|kaise theek|upay|remedy|samadhan|ilaj|उपचार|theek kaise|rasta|रास्ता|कैसे दूर/i.test(
+  return /उपाय|समाधान|निवारण|क्या करूँ|क्या करूं|kaise theek|upay|remedy|samadhan|ilaj|उपचार|theek kaise|rasta|रास्ता|कैसे दूर|समाधान बत|उपाय बत/i.test(
+    userMessage,
+  );
+}
+
+function userAsksWhyOrCause(userMessage: string): boolean {
+  return /क्यों|kyu|kyun|कैसे हो|वजह|reason|cause|कारण|grah|ग्रह|kundli|कुंडली/i.test(
+    userMessage,
+  );
+}
+
+function isNewConcern(userMessage: string): boolean {
+  return /नौकरी|शादी|पैसा|धन|प्रेम|धर्म|धार्मिक|स्वास्थ्य|करियर|विवाह|परिवार|job|marriage|money|career|religious/i.test(
     userMessage,
   );
 }
 
 /**
- * Paid session reply shape — client flow:
- * 1. Problem (plain life talk, no graha)
- * 2. Astro cause (why — graha/nakshatra)
- * 3. Remedy (nivaran/upay)
- * 4. Follow-up on their question
+ * Phase from full chat progress — not just last bot message.
+ * Client flow: problem (plain) → astro cause → remedy → follow-up.
  */
 export function detectPaidConsultationPhase(
   history: HistoryEntry[],
   userMessage: string,
 ): PaidConsultationPhase {
-  const lastAssistant = lastAssistantMessage(history);
   const trimmed = userMessage.trim();
-  const hadAstro = ASTRO_TERMS.test(lastAssistant);
-  const hadRemedy = REMEDY.test(lastAssistant);
+  const progress = getConsultationProgress(history, userMessage);
   const asksRemedy = userAsksRemedy(trimmed);
+  const asksCause = userAsksWhyOrCause(trimmed);
 
-  if (hadRemedy) {
-    if (NEW_CONCERN.test(trimmed) && !userShortAck(trimmed) && !asksRemedy) {
+  if (userIsFrustratedWithBot(trimmed)) {
+    return "reassure_and_answer";
+  }
+
+  if (progress.gaveRemedy) {
+    if (isNewConcern(trimmed) && !userShortAck(trimmed) && !asksRemedy) {
       return "discuss_problem";
     }
     return "follow_up";
   }
 
   if (asksRemedy) {
-    return hadAstro ? "give_remedy" : "explain_astro_cause";
+    return progress.explainedCause ? "give_remedy" : "explain_astro_cause";
   }
 
-  if (hadAstro) {
-    return userShortAck(trimmed) ? "give_remedy" : "follow_up";
+  if (progress.explainedCause && !progress.gaveRemedy) {
+    return userShortAck(trimmed) || asksCause ? "give_remedy" : "follow_up";
   }
 
-  if (PAYMENT_ACK.test(lastAssistant)) {
+  if (progress.discussedProblemPlain && !progress.explainedCause) {
+    return "explain_astro_cause";
+  }
+
+  if (progress.userStatedProblem && !progress.discussedProblemPlain) {
     return "discuss_problem";
   }
 
-  if (!hadAstro && lastAssistant.length > 0) {
-    return "explain_astro_cause";
+  const lastAssistant = history.filter((m) => m.role === "assistant").at(-1);
+  if (lastAssistant && PAYMENT_ACK.test(lastAssistant.content)) {
+    return progress.userStatedProblem ? "discuss_problem" : "discuss_problem";
   }
 
   return "discuss_problem";
@@ -82,33 +92,41 @@ export function paidPhaseInstruction(phase: PaidConsultationPhase): string {
   switch (phase) {
     case "discuss_problem":
       return `
-━━━ इस मैसेज का काम: सिर्फ समस्या (प्रॉब्लम) ━━━
-- User ने जो परेशानी बताई (नौकरी, शादी, पैसा...) — उसी पर बात करो: कैसा लगता है, क्या हो रहा है, दिल पर क्या बोझ है
-- सहानुभूति, 3-5 पंक्तियाँ — जैसे पंडित सुनकर समझा रहा हो
-- इस मैसेज में ग्रह, नक्षत्र, दशा, कुंडली, शनि, राहु — कुछ भी मत लिखो
-- उपाय/निवारण भी मत दो — सिर्फ समस्या की सीधी बात`;
+━━━ अभी: समस्या पर बात (जीवन की भाषा) ━━━
+- User जो कह रहा है (धर्म, नौकरी, शादी...) — उसे सुनकर समझाओ कैसा महसूस होता है, क्या हो रहा है
+- Chat में पहले से जो बातें हैं — उन्हें याद रखो, दोबारा data मत माँगो
+- इस मैसेज में ग्रह/नक्षत्र/दशा/भाव/कुंडली — बिल्कुल नहीं
+- उपाय भी नहीं — सिर्फ इंसानी, सहानुभूतिपूर्ण बात
+- "दो लाइन में", "स्पष्ट बताएं", "कुंडली देखकर" — मना`;
 
     case "explain_astro_cause":
       return `
-━━━ इस मैसेज का काम: क्यों हो रही है समस्या (ज्योतिषीय कारण) ━━━
-- पिछली बात (समस्या) को लंबा दोहराओ मत — एक पंक्ति काफी
-- अब बताओ कुंडली से क्यों रुकावट है — ग्रह, दशा, नक्षत्र, भाव (साधारण खड़ी बोली)
-- इस मैसेज में उपाय/निवारण मत दो — न दान, न पूजा, न मंत्र
-- अंत में छोटी लाइन चाहे: "इसीलिए राह अटकी है" — ज़बरदस्ती "समाधान बताऊँ?" मत`;
+━━━ अभी: क्यों हो रहा है (ज्योतिषीय कारण) ━━━
+- समस्या पहले हो चुकी — अब कुंडली से बताओ क्यों रुकावट है
+- ग्रह, दशा, भाव — साधारण खड़ी बोली, एक-दो बिंदु
+- उपाय/निवारण इस मैसेज में नहीं
+- समस्या या जन्म विवरण दोबारा मत पढ़ाओ`;
 
     case "give_remedy":
       return `
-━━━ इस मैसेज का काम: निवारण / उपाय (समाधान) ━━━
-- User ने समाधान माँगा या कारण समझ लिया — अब 1-2 सरल उपाय बताओ
-- पूजा, मंत्र, दान, व्रत, पाठ — जैसा असली पंडित कहे
-- पूरा कारण-विश्लेषण या समस्या दोबारा मत पढ़ाओ
-- Resume, apply, interview जैसी worldly advice मत`;
+━━━ अभी: निवारण / उपाय ━━━
+- 1-2 सरल उपाय — पूजा, मंत्र, दान, व्रत
+- कारण का लंबा lecture मत — अधिकतम एक पंक्ति
+- HR/resume/apply advice मत`;
 
     case "follow_up":
       return `
-━━━ इस मैसेज का काम: उनके सवाल का सीधा जवाब ━━━
-- सिर्फ जो अभी पूछा (समय, शक, और सवाल) — उसी पर जवाब
-- पूरा टेम्पलेट दोहराओ मत: न सारी कुंडली, न सारे ग्रह, न सारे उपाय फिर से
-- छोटा, मानवीय — 2-4 पंक्तियाँ`;
+━━━ अभी: उनके सवाल का सीधा जवाब ━━━
+- सिर्फ जो अभी पूछा — समय, शक, और detail
+- पूरा टेम्पलेट, सारे ग्रह, सारे उपाय — दोहराओ मत
+- 2-4 पंक्तियाँ, natural`;
+
+    case "reassure_and_answer":
+      return `
+━━━ User नाराज/शक में है — शांत, इंसानी जवाब ━━━
+- छोटी सहानुभूति — "समझता हूँ" ठीक है, lecture नहीं
+- कहो: आपकी जन्म कुंडली chat में है, देख चुके हैं — दोबारा विवरण मत माँगो
+- उनकी असली समस्या (chat से) पर वापस लाओ — अगला logical कदम: समस्या/कारण/उपाय में से जो बाकी हो
+- Defensive mat bolo, "दो लाइन में" mat bolo, ग्रह तभी जब उस चरण की बारी हो`;
   }
 }

@@ -11,6 +11,7 @@ import { getXaiConfig } from "./config";
 import { normalizeReplyNumerals } from "./normalize-numerals";
 import { buildPanditGSystemPrompt } from "./prompts";
 import { detectPaidConsultationPhase } from "./paid-consultation-phase";
+import { buildPaidSessionContextBlock, BANNED_ROBOTIC_PHRASES } from "./consultation-context";
 
 export type UserImageInput = {
   data: Uint8Array;
@@ -62,6 +63,13 @@ function buildStoredUserMessage(userMessage: string, hasImage: boolean): string 
   return trimmed;
 }
 
+function containsBannedRoboticPhrase(text: string): boolean {
+  const lower = text.toLowerCase();
+  return BANNED_ROBOTIC_PHRASES.some((phrase) =>
+    lower.includes(phrase.toLowerCase()),
+  );
+}
+
 export async function generatePanditGReply({
   phone,
   userMessage,
@@ -92,32 +100,56 @@ export async function generatePanditGReply({
   const recentAssistantTexts = history
     .filter((e) => e.role === "assistant")
     .map((e) => e.content)
-    .slice(-3);
+    .slice(-5);
   const paidConsultationPhase = isPaidSession
     ? detectPaidConsultationPhase(history, userMessage)
     : undefined;
+  const paidSessionContext = isPaidSession
+    ? buildPaidSessionContextBlock(history, userMessage)
+    : undefined;
+
+  const systemPrompt = buildPanditGSystemPrompt({
+    contactName,
+    isContinuingConversation,
+    hasImage,
+    isPaidSession,
+    paidConsultationPhase,
+    paidSessionContext,
+    sessionMinutesRemaining,
+    recentAssistantTexts,
+  });
 
   const languageModel = hasImage
     ? provider.chat(visionModel)
     : provider.responses(model);
 
-  const { text } = await generateText({
+  let { text } = await generateText({
     model: languageModel,
-    system: buildPanditGSystemPrompt({
-      contactName,
-      isContinuingConversation,
-      hasImage,
-      isPaidSession,
-      paidConsultationPhase,
-      sessionMinutesRemaining,
-      recentAssistantTexts,
-    }),
+    system: systemPrompt,
     messages,
     temperature: isPaidSession ? 0.93 : 0.88,
     maxRetries: 1,
   });
 
-  const reply = text.trim();
+  let reply = text.trim();
+
+  if (
+    isPaidSession &&
+    reply &&
+    containsBannedRoboticPhrase(reply)
+  ) {
+    const { text: retryText } = await generateText({
+      model: languageModel,
+      system: `${systemPrompt}\n\nREWRITE — your last draft used banned robotic phrases. Reply naturally in 3-4 lines WITHOUT asking for "दो लाइन", birth details again, or "कुंडली देखकर बताऊँगा".`,
+      messages,
+      temperature: 0.97,
+      maxRetries: 1,
+    });
+    const retryReply = retryText.trim();
+    if (retryReply && !containsBannedRoboticPhrase(retryReply)) {
+      reply = retryReply;
+    }
+  }
 
   if (!reply) {
     throw new Error("xAI API returned an empty response");

@@ -33,16 +33,17 @@ FIRST MESSAGE (no prior user messages):
 
 ON-TOPIC (decision "allow"):
 - Greetings, namaste, birth details, palm photos
-- Life problems: marriage, career, money, health, family, stress, enemies
+- Life problems: marriage, career, money, health, family, stress, enemies, religious/dharmic concerns
 - Payment / dakshina questions, remedies, follow-ups
 - Emotional sharing about how others treat them
 - Mild frustration with life — not abuse at pandit
+- User doubting pandit or saying "farji/fake/bot" out of frustration with repetitive replies — ALLOW (they need reassurance, not punishment)
+- User complaining "bar bar bol rahe ho", "do line mat bolo" — ALLOW
 
 STRIKE (warn — chat continues):
-- Mild rudeness toward pandit
-- Off-topic requests: coding, homework, cricket, politics (once or twice)
-- Repetitive pointless messages, bot-testing
-- Slightly abusive language toward pandit (not life description)
+- Clear direct slurs or sexual harassment AT pandit
+- Sustained trolling with zero consultation intent after warnings
+- NOT for: farji pandit, bot accusations, frustration with service quality
 
 ALLOW when unsure — prefer giving users full chance to consult.
 

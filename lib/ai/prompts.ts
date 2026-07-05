@@ -1,5 +1,6 @@
 import { PANDIT_CITY, PANDIT_NAME, PAID_ASTROLOGER_ONLY } from "./pandit-voice";
 import { ARABIC_NUMERALS_RULE } from "./normalize-numerals";
+import { BANNED_ROBOTIC_PHRASES } from "./consultation-context";
 import {
   type PaidConsultationPhase,
   paidPhaseInstruction,
@@ -29,8 +30,8 @@ ${ARABIC_NUMERALS_RULE}
 function formatRecentReplies(snippets: string[]): string {
   if (snippets.length === 0) return "";
   const lines = snippets
-    .slice(-3)
-    .map((s, i) => `${i + 1}. ${s.slice(0, 280)}`)
+    .slice(-5)
+    .map((s, i) => `${i + 1}. ${s.slice(0, 320)}`)
     .join("\n");
   return `
 
@@ -44,6 +45,7 @@ export function buildPanditGSystemPrompt(options: {
   hasImage?: boolean;
   isPaidSession?: boolean;
   paidConsultationPhase?: PaidConsultationPhase;
+  paidSessionContext?: string;
   sessionMinutesRemaining?: number;
   recentAssistantTexts?: string[];
 }): string {
@@ -53,6 +55,7 @@ export function buildPanditGSystemPrompt(options: {
     hasImage,
     isPaidSession,
     paidConsultationPhase,
+    paidSessionContext,
     sessionMinutesRemaining,
     recentAssistantTexts = [],
   } = options;
@@ -75,30 +78,31 @@ export function buildPanditGSystemPrompt(options: {
     const phaseBlock = paidConsultationPhase
       ? paidPhaseInstruction(paidConsultationPhase)
       : "";
+    const bannedPhrases = BANNED_ROBOTIC_PHRASES.map((p) => `"${p}"`).join(", ");
 
     prompt += `
 
-━━━ भुगतान के बाद — असली ज्योतिष परामर्श (बातचीत की तरह, टेम्पलेट नहीं) ━━━
+━━━ भुगतान के बाद — WhatsApp पर जैसे असली पंडित बात करते हैं ━━━
+${paidSessionContext ?? ""}
 ${PAID_ASTROLOGER_ONLY}
 ${phaseBlock}
 
-रोबोटिक पैटर्न मत चलाओ:
-- हर जवाब "नाम जी, समझ सकता हूँ" से शुरू मत करो
-- हर बार शनि + राहु + दो उपाय एक साथ मत पैक करो
-- नंबर वाली लिस्ट, एक जैसा पैराग्राफ कॉपी — मना
+मानवीय बातचीत — robot नहीं:
+- हर मैसेज अलग लगे — same opener, same closing, same structure मत
+- User ने chat में जो कहा — वही याद रखो; फिर से form भरवाने जaisa mat bolo
+- एक ही मैसेज में समस्या + ग्रह + उपाय mat pack karo
 
-प्राकृतिक क्रम (एक मैसेज में सब कुछ मत दो — client flow):
-1. समस्या — सीधी बात, बिना ग्रह/नक्षत्र
-2. कारण — कुंडली से क्यों (ग्रह, दशा, भाव)
-3. निवारण — उपाय जब user पूछे या समझ जाए
-4. उनके सवाल — छोटा जवाब
+क्रम (step-by-step, alag messages):
+1. समस्या — दैनिक ज़िंदगी की भाषा, बिना ग्रह
+2. कारण — फिर कुंडली/ग्रह/दशा
+3. उपाय — जब user तैयार हो या पूछे
+4. छोटे follow-up
 
-User समाधान पूछे → समाधान दो। User समस्या बताए → समस्या पर बात करो, ग्रह मत।
+कभी मत लिखो: ${bannedPhrases}
 
-पूरा चैट पढ़ो — जन्म विवरण, पिछली बातें। पिछले जवाब में जो ग्रह या उपाय बोले, दोहराओ मत।
 ${formatRecentReplies(recentAssistantTexts)}
 ${sessionMinutesRemaining ? `\nसत्र: लगभग ${sessionMinutesRemaining} मिनट बचे।` : ""}
-3-6 पंक्तियाँ, बहती हुई खड़ी बोली।`;
+3-5 पंक्तियाँ — छोटा, natural, flowing Hindi।`;
   }
 
   prompt += `\n\nयाद रखो: ${PANDIT_NAME}, ${PANDIT_CITY} — सहानुभूति, स्पष्ट हिंदी।`;
