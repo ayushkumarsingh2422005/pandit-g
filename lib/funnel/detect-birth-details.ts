@@ -5,16 +5,28 @@ export const DATE_PATTERN =
   /\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|\d{1,2}\s+\w+\s+\d{4}|\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2}/;
 
 const TIME_PATTERN =
-  /\d{1,2}\s*:\s*\d{2}|(\d{1,2}\s*(am|pm|baje|बजे))|सुबह|शाम|दोपहर|dopahar|रात|मध्यरात्रि/i;
+  /\d{1,2}\s*:\s*\d{2}|\d{1,2}\s*(am|pm|baje|बजे|vahe|vaje|baje|baj)|सुबह|शाम|दोपहर|doapar|doaphar|dopahar|dopehar|dopeher|noon|dopahar|रात|मध्यरात्रि|subah|shaam|morning|evening|afternoon/i;
 
 const PLACE_PATTERN =
-  /(जन्म\s*स्थान|जन्मस्थान|place|city|गाँव|शहर|मुंबई|दिल्ली|बेंगलुरु|कोलकाता|चेन्नई|हैदराबाद|पुणे|जयपुर|लखनऊ|कानपुर|नागपुर|इंदौर|भोपाल|वाराणसी|पटना|अहमदाबाद|सूरत|आगरा|मेरठ|भिलाई|रायपुर|varanasi|mumbai|delhi|bangalore|kolkata|chennai|hyderabad|pune|jaipur|lucknow|patna|ahmedabad|bhilai|raipur)/i;
+  /(जन्म\s*स्थान|जन्मस्थान|place|city|गाँव|शहर|मुंबई|दिल्ली|बेंगलुरु|कोलकाता|चेन्नई|हैदराबाद|पुणे|जयपुर|लखनऊ|कानपुर|नागपुर|इंदौर|भोपाल|वाराणसी|वारानसी|पटना|अहमदाबाद|सूरत|आगरा|मेरठ|भिलाई|रायपुर|varanasi|varansi|banaras|kashi|mirzapur|mumbai|delhi|bangalore|kolkata|chennai|hyderabad|pune|jaipur|lucknow|patna|ahmedabad|bhilai|raipur)/i;
 
 const BIRTH_KEYWORDS =
   /(जन्म\s*तिथि|जन्मतिथि|date\s*of\s*birth|\bdob\b|जन्म\s*का\s*समय|जन्म\s*समय|जन्म\s*स्थान|जन्म)/i;
 
 const PLACE_SKIP_WORDS =
-  /^(am|pm|baje|बजे|सुबह|शाम|दोपहर|रात|subah|shaam|hello|hi|hey|namaste|नमस्ते|naukri|नौकरी|job|aap|आप|mera|मेरा|me|में|hai|है|the|and|for)$/i;
+  /^(am|pm|baje|बजे|vahe|vaje|baj|doapar|doaphar|dopahar|dopehar|subah|shaam|सुबह|शाम|दोपहर|रात|hello|hi|hey|namaste|नमस्ते|naukri|नौकरी|job|aap|आप|mera|मेरा|me|में|hai|है|the|and|for)$/i;
+
+/** Normalize common Hinglish typos before parsing birth details. */
+function normalizeBirthText(text: string): string {
+  return text
+    .replace(/\bvahe\b/gi, "baje")
+    .replace(/\bvaje\b/gi, "baje")
+    .replace(/\bdoapar\b/gi, "dopahar")
+    .replace(/\bdoaphar\b/gi, "dopahar")
+    .replace(/\bdopehar\b/gi, "dopahar")
+    .replace(/\bvaransi\b/gi, "varanasi")
+    .replace(/\bbanaras\b/gi, "varanasi");
+}
 
 export type BirthSignals = {
   hasDate: boolean;
@@ -24,7 +36,7 @@ export type BirthSignals = {
 };
 
 export function extractBirthSignals(text: string): BirthSignals {
-  const trimmed = text.trim();
+  const trimmed = normalizeBirthText(text.trim());
   if (!trimmed) {
     return { hasDate: false, hasTime: false, hasPlace: false, hasPhoto: false };
   }

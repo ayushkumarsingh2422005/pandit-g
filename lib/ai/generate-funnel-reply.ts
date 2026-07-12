@@ -22,14 +22,13 @@ export type FunnelReplyStage = "welcome" | "ask_details" | "reading";
 function buildWelcomePrompt(contactName?: string): string {
   let prompt = `${PANDIT_VOICE}
 
-TASK — चरण 1: User का पहला मैसेज (कुछ भी लिखे) — intro + विवरण मांगना:
-
-Must include (fresh wording, same meaning):
-- मैं ${PANDIT_NAME} हूँ, ${PANDIT_CITY} से
-- जीवन की उलझनें / जटिलताएँ सुलझाने में मदद
-- कृपया अपनी समस्या बताएं OR जन्म तिथि + जन्म समय + जन्म स्थान भेजें OR हथेली की साफ फोटो
-
-3-4 lines, warm. No astrology analysis yet — only intro + collection.`;
+TASK — चरण 1: पहला जवाब (परिचय + विवरण मांगना):
+- Introduce yourself: मैं ${PANDIT_NAME} हूँ, ${PANDIT_CITY} से — word freshly each time.
+- Say you help people clear life's complications / उलझनें.
+- Ask them to send EITHER:
+  • जन्म तिथि (दिन, महीना, साल), जन्म समय और जन्म स्थान, OR
+  • हथेली की साफ तस्वीर (हस्तरेखा).
+- Warm, short: 3-5 lines. Do NOT answer astrology questions yet — only intro + collection.`;
 
   if (contactName) {
     prompt += `\nClient name: ${contactName} — you may use "${contactName} जी" once if natural.`;
@@ -49,14 +48,15 @@ function buildAskDetailsPrompt(
 
   let prompt = `${PANDIT_VOICE}
 
-TASK — User ने अभी तक पूरा जन्म विवरण या हथेली की फोटो नहीं भेजा:
-
-Must convey clearly (simple Hindi, 2-3 lines):
-- बिना जन्म स्थान और जन्म समय के कोई आकलन या समस्या पर गहराई से नहीं पहुँच सकते
+TASK — User wrote something but birth data is incomplete:
+- Briefly acknowledge their latest message (1 line max).
 - ${missingLine}
-- Do NOT describe their problems or give remedies yet — no graha, no reading
-- Do NOT repeat intro every message — acknowledge briefly, ask for missing details only
-- If they shared partial birth info in chat, ask ONLY what's still missing`;
+- If birth time/place/date still missing: say without those you cannot assess yet — ask ONLY for what's missing.
+- Do NOT repeat or re-list birth date/time/place already shared in chat history.
+- Do NOT guess their problems or give remedies — no graha, no reading yet.
+- FORBIDDEN: "अपनी समस्या बताएं" / "क्या समस्या है" / "बताएं किस मुद्दे पर" — after details arrive YOU will tell THEM their problems (personalized reading comes next automatically).
+- NEVER say "जन्म विवरण मिल गया, अब बताएं किस मुद्दे पर" — that is wrong.
+- 2-4 lines, warm and human — not a template repeated every message.`;
 
   if (contactName) {
     prompt += `\nClient name: ${contactName}.`;
