@@ -18,6 +18,11 @@ export type ConsultationProgress = {
   hasBirthDetails: boolean;
   statedConcerns: string[];
   freeReadingSnippet?: string;
+  freeReadingDone: boolean;
+  paidProblemReplyDone: boolean;
+  paidCauseReplyDone: boolean;
+  paidRemedyReplyDone: boolean;
+  problemsFullyDescribed: boolean;
 };
 
 export function userIsFrustratedWithBot(text: string): boolean {
@@ -121,17 +126,32 @@ export function getConsultationProgress(
   let gaveRemedy = false;
 
   const assistantAfterPayment = afterPayment.filter((m) => m.role === "assistant");
+  let paidProblemReplyDone = false;
+  let paidCauseReplyDone = false;
+  let paidRemedyReplyDone = false;
+
   for (const msg of assistantAfterPayment) {
-    if (REMEDY.test(msg.content)) gaveRemedy = true;
-    if (ASTRO_TERMS.test(msg.content)) explainedCause = true;
+    if (PAYMENT_ACK.test(msg.content)) continue;
+    if (REMEDY.test(msg.content)) paidRemedyReplyDone = true;
+    if (ASTRO_TERMS.test(msg.content)) paidCauseReplyDone = true;
     if (
       !ASTRO_TERMS.test(msg.content) &&
       !REMEDY.test(msg.content) &&
-      msg.content.length > 60
+      !PAYMENT_ACK.test(msg.content) &&
+      !msg.content.includes("rzp.io") &&
+      msg.content.length > 40
     ) {
+      paidProblemReplyDone = true;
       discussedProblemPlain = true;
     }
+    if (REMEDY.test(msg.content)) gaveRemedy = true;
+    if (ASTRO_TERMS.test(msg.content)) explainedCause = true;
   }
+
+  const freeReadingSnippet = findFreeReadingSnippet(history);
+  const freeReadingDone = Boolean(freeReadingSnippet);
+  const problemsFullyDescribed =
+    freeReadingDone || paidProblemReplyDone || discussedProblemPlain;
 
   const birthProfile = buildBirthProfileFromHistory(history);
 
@@ -142,7 +162,12 @@ export function getConsultationProgress(
     gaveRemedy,
     hasBirthDetails: Boolean(birthProfile.dobLabel),
     statedConcerns: statedConcerns.slice(-4),
-    freeReadingSnippet: findFreeReadingSnippet(history),
+    freeReadingSnippet,
+    freeReadingDone,
+    paidProblemReplyDone,
+    paidCauseReplyDone,
+    paidRemedyReplyDone,
+    problemsFullyDescribed,
   };
 }
 
@@ -172,7 +197,13 @@ export function buildPaidSessionContextBlock(
 User की बातें:
 ${concernsLine}${readingLine}
 
-Progress: समस्या ${progress.discussedProblemPlain ? "✓" : "—"} | कारण ${progress.explainedCause ? "✓" : "—"} | उपाय ${progress.gaveRemedy ? "✓" : "—"}
+Progress (एक समय पर एक चरण):
+- मुफ़्त पढ़ाव (समस्याएँ): ${progress.freeReadingDone ? "✓ हो चुका" : "—"}
+- भुगतान के बाद समस्या: ${progress.paidProblemReplyDone ? "✓" : progress.freeReadingDone ? "skip (पढ़ाव में हो चुका)" : "—"}
+- कारण (ग्रह/दशा): ${progress.paidCauseReplyDone ? "✓" : "← अगला यही"}
+- उपाय: ${progress.paidRemedyReplyDone ? "✓" : progress.paidCauseReplyDone ? "← अगला यही" : "—"}
+
+पूरा flow: intro → जन्म विवरण → समस्याएँ (बिना ग्रह) → भुगतान → कारण (ग्रह) → उपाय → follow-up
 
 सख्त मना — robotic loop:
 - "दो लाइन में लिखें/बताएं" — कभी नहीं

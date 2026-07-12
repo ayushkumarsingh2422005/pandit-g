@@ -12,6 +12,10 @@ import { normalizeReplyNumerals } from "./normalize-numerals";
 import { buildPanditGSystemPrompt } from "./prompts";
 import { detectPaidConsultationPhase } from "./paid-consultation-phase";
 import { buildPaidSessionContextBlock, BANNED_ROBOTIC_PHRASES } from "./consultation-context";
+import {
+  buildPhaseRetryInstruction,
+  replyViolatesPhase,
+} from "./phase-reply-validator";
 
 export type UserImageInput = {
   data: Uint8Array;
@@ -132,6 +136,26 @@ export async function generatePanditGReply({
   });
 
   let reply = text.trim();
+
+  if (isPaidSession && reply && paidConsultationPhase) {
+    const phaseViolation = replyViolatesPhase(paidConsultationPhase, reply);
+    if (phaseViolation) {
+      const { text: retryText } = await generateText({
+        model: languageModel,
+        system: `${systemPrompt}\n\n${buildPhaseRetryInstruction(phaseViolation)}`,
+        messages,
+        temperature: 0.95,
+        maxRetries: 1,
+      });
+      const retryReply = retryText.trim();
+      if (
+        retryReply &&
+        !replyViolatesPhase(paidConsultationPhase, retryReply)
+      ) {
+        reply = retryReply;
+      }
+    }
+  }
 
   if (
     isPaidSession &&

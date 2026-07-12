@@ -82,27 +82,20 @@ export function buildPanditGSystemPrompt(options: {
 
     prompt += `
 
-━━━ भुगतान के बाद — WhatsApp पर जैसे असली पंडित बात करते हैं ━━━
+━━━ Client flow — एक message = एक चरण ━━━
 ${paidSessionContext ?? ""}
 ${PAID_ASTROLOGER_ONLY}
+
 ${phaseBlock}
 
-मानवीय बातचीत — robot नहीं:
-- हर मैसेज अलग लगे — same opener, same closing, same structure मत
-- User ने chat में जो कहा — वही याद रखो; फिर से form भरवाने जaisa mat bolo
-- एक ही मैसेज में समस्या + ग्रह + उपाय mat pack karo
-
-क्रम (step-by-step, alag messages):
-1. समस्या — दैनिक ज़िंदगी की भाषा, बिना ग्रह
-2. कारण — फिर कुंडली/ग्रह/दशा
-3. उपाय — जब user तैयार हो या पूछे
-4. छोटे follow-up
+पूरा रास्ता: intro → जन्म विवरण → समस्याएँ (बिना ग्रह) → भुगतान → कारण (ग्रह) → उपाय → follow-up
+मुफ़्त पढ़ाव में समस्याएँ हो चुकी हों तो भुगतान के बाद सीधे कारण (चरण 2), फिर उपाय (चरण 3) — एक साथ mat bolo
 
 कभी मत लिखो: ${bannedPhrases}
 
 ${formatRecentReplies(recentAssistantTexts)}
 ${sessionMinutesRemaining ? `\nसत्र: लगभग ${sessionMinutesRemaining} मिनट बचे।` : ""}
-3-5 पंक्तियाँ — छोटा, natural, flowing Hindi।`;
+3-4 पंक्तियाँ — natural Hindi।`;
   }
 
   prompt += `\n\nयाद रखो: ${PANDIT_NAME}, ${PANDIT_CITY} — सहानुभूति, स्पष्ट हिंदी।`;
