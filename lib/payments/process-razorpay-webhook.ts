@@ -2,7 +2,7 @@ import type { PaymentRecord } from "@/lib/db/payments";
 import { startConsultationSession } from "@/lib/db/sessions";
 import { saveConversationTurn } from "@/lib/db/conversations";
 import { getRazorpayConfig } from "@/lib/razorpay/config";
-import { sendTextMessage } from "@/lib/whatsapp/client";
+import { sendHumanTextMessage } from "@/lib/whatsapp/human-typing";
 
 function buildPaymentSuccessMessage(contactName: string | undefined): string {
   const greeting = contactName ? `${contactName} जी, ` : "";
@@ -109,5 +109,5 @@ export async function processRazorpayWebhookEvent(
     "active",
   );
 
-  await sendTextMessage({ to: paid.phone, body: reply });
+  await sendHumanTextMessage({ to: paid.phone, body: reply });
 }

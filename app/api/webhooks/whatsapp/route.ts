@@ -6,9 +6,8 @@ import type { WhatsAppWebhookPayload } from "@/lib/whatsapp/types";
 
 export const runtime = "nodejs";
 
-// Groq AI + WhatsApp send can take a few seconds — allow up to 60s on Vercel Pro.
-// Hobby plan max is 10s; upgrade to Pro if AI replies time out.
-export const maxDuration = 60;
+// Hobby plan max is 10s. AI runs here; typing delay is a separate route.
+export const maxDuration = 10;
 
 /**
  * Meta WhatsApp Cloud API — webhook verification (GET)

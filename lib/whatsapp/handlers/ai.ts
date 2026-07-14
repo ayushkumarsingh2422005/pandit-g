@@ -24,8 +24,22 @@ import { getOrCreateConsultationPaymentLink } from "@/lib/razorpay/create-paymen
 import { isRazorpayConfigured } from "@/lib/razorpay/is-configured";
 import { handleConversationModeration } from "@/lib/moderation/handle-moderation";
 import { downloadWhatsAppMedia } from "../media";
-import { sendTextMessage } from "../client";
+import { sendHumanTextMessage } from "../human-typing";
 import type { IncomingAiMessage } from "../types";
+
+/** AI reply with character-based typing delay (human feel). */
+async function replyAsHuman(
+  message: IncomingAiMessage,
+  body: string,
+  generationStartedAt?: number,
+) {
+  await sendHumanTextMessage({
+    to: message.from,
+    body,
+    replyToMessageId: message.messageId,
+    generationStartedAt,
+  });
+}
 
 function buildStoredUserMessage(text: string, hasImage: boolean): string {
   const trimmed = text.trim();
@@ -79,6 +93,7 @@ async function handlePaidConsultationGate(
   const access = await getConsultationAccess(message.from);
 
   if (access.hasAccess) {
+    const startedAt = Date.now();
     const reply = await generatePanditGReply({
       phone: message.from,
       userMessage: message.text,
@@ -87,7 +102,7 @@ async function handlePaidConsultationGate(
       funnelStage: "active",
       sessionMinutesRemaining: access.minutesRemaining,
     });
-    await sendTextMessage({ to: message.from, body: reply });
+    await replyAsHuman(message, reply, startedAt);
     return;
   }
 
@@ -109,6 +124,7 @@ async function handlePaidConsultationGate(
     replyType = "unpaid";
   }
 
+  const startedAt = Date.now();
   const reply = await generatePaymentReply({
     type: replyType,
     phone: message.from,
@@ -126,7 +142,7 @@ async function handlePaidConsultationGate(
     message.contactName,
     "active",
   );
-  await sendTextMessage({ to: message.from, body: reply });
+  await replyAsHuman(message, reply, startedAt);
 }
 
 async function sendPaymentOfferAfterReading(message: IncomingAiMessage) {
@@ -154,7 +170,7 @@ async function sendPaymentOfferAfterReading(message: IncomingAiMessage) {
     "reading_delivered",
   );
 
-  await sendTextMessage({ to: message.from, body: paymentOffer });
+  await replyAsHuman(message, paymentOffer);
 }
 
 /** Funnel + AI handler. Read receipt + typing are sent earlier in the webhook route. */
@@ -168,13 +184,14 @@ export async function handleAiMessage(message: IncomingAiMessage) {
     } catch (error) {
       console.error("[whatsapp media]", error);
       try {
+        const startedAt = Date.now();
         const reply = await generateErrorReply("image_download");
-        await sendTextMessage({ to: message.from, body: reply });
+        await replyAsHuman(message, reply, startedAt);
       } catch {
-        await sendTextMessage({
-          to: message.from,
-          body: "🙏 फोटो नहीं खुली — कृपया साफ हथेली की फोटो दोबारा भेजिए।",
-        });
+        await replyAsHuman(
+          message,
+          "🙏 फोटो नहीं खुली — कृपया साफ हथेली की फोटो दोबारा भेजिए।",
+        );
       }
       return;
     }
@@ -204,6 +221,7 @@ export async function handleAiMessage(message: IncomingAiMessage) {
   try {
 
     if (stage === "initial") {
+      const startedAt = Date.now();
       const reply = await generateFunnelReply({
         stage: "welcome",
         phone: message.from,
@@ -217,11 +235,12 @@ export async function handleAiMessage(message: IncomingAiMessage) {
         message.contactName,
         "awaiting_details",
       );
-      await sendTextMessage({ to: message.from, body: reply });
+      await replyAsHuman(message, reply, startedAt);
       return;
     }
 
     if (stage === "awaiting_details" && !detailsComplete) {
+      const startedAt = Date.now();
       const reply = await generateFunnelReply({
         stage: "ask_details",
         phone: message.from,
@@ -240,13 +259,15 @@ export async function handleAiMessage(message: IncomingAiMessage) {
         message.contactName,
         "awaiting_details",
       );
-      await sendTextMessage({ to: message.from, body: reply });
+      await replyAsHuman(message, reply, startedAt);
       return;
     }
 
     if (stage === "awaiting_details" && detailsComplete) {
+      // Kundli "study" pause — then age-based reading (extra long feel).
       await sleep(getFunnelReadingDelayMs());
 
+      const startedAt = Date.now();
       const reading = await generateFunnelReply({
         stage: "reading",
         phone: message.from,
@@ -262,7 +283,7 @@ export async function handleAiMessage(message: IncomingAiMessage) {
         message.contactName,
         "reading_delivered",
       );
-      await sendTextMessage({ to: message.from, body: reading });
+      await replyAsHuman(message, reading, startedAt);
       await sendPaymentOfferAfterReading(message);
       return;
     }
@@ -277,6 +298,7 @@ export async function handleAiMessage(message: IncomingAiMessage) {
       return;
     }
 
+    const startedAt = Date.now();
     const reply = await generatePanditGReply({
       phone: message.from,
       userMessage: message.text,
@@ -285,17 +307,15 @@ export async function handleAiMessage(message: IncomingAiMessage) {
       funnelStage: stage,
     });
 
-    await sendTextMessage({ to: message.from, body: reply });
+    await replyAsHuman(message, reply, startedAt);
   } catch (error) {
     console.error("[whatsapp ai]", error);
     try {
+      const startedAt = Date.now();
       const reply = await generateErrorReply("general");
-      await sendTextMessage({ to: message.from, body: reply });
+      await replyAsHuman(message, reply, startedAt);
     } catch {
-      await sendTextMessage({
-        to: message.from,
-        body: "🙏 कृपया थोड़ी देर बाद फिर लिखिए।",
-      });
+      await replyAsHuman(message, "🙏 कृपया थोड़ी देर बाद फिर लिखिए।");
     }
   }
 }
