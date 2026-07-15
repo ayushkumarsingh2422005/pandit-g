@@ -1,16 +1,13 @@
-# Pandit G — Hostinger VPS + Docker Manager
+# Pandit G — Hostinger VPS
 #
-# Prerequisites:
-# 1) DNS A records for panditg.live (and www) → VPS IP
-# 2) Traefik project deployed from Hostinger Docker Manager catalog
-#    (creates external network: traefik-proxy)
-# 3) File `.env` next to this compose (copy from .env.example)
+# Your Traefik (traefik-tvdm) uses Docker network_mode: host
+# (confirmed via: docker inspect → Networks = "host").
 #
-# Deploy (SSH):
+# Traefik discovers this container via docker.sock + labels,
+# and reaches it through the Docker bridge IP (no shared compose network needed).
+#
+# Deploy:
 #   cd /opt/pandit-g && docker compose up -d --build
-#
-# Or paste this file into Docker Manager → Compose → Compose manually
-# (build context must be the cloned repo on the VPS — prefer SSH build).
 
 services:
   pandit-g:
@@ -26,28 +23,18 @@ services:
       PORT: "3000"
       HOSTNAME: 0.0.0.0
       APP_URL: https://panditg.live
-    # Do NOT publish 80/443 here — Traefik owns those ports.
-    # Optional local debug only:
-    # ports:
-    #   - "3000:3000"
-    networks:
-      - traefik-proxy
+    # Bound only to localhost — public traffic goes through Traefik :443
+    ports:
+      - "127.0.0.1:3000:3000"
     labels:
       - traefik.enable=true
-      - traefik.docker.network=traefik-proxy
-      # Main domain
       - traefik.http.routers.pandit-g.rule=Host(`panditg.live`) || Host(`www.panditg.live`)
       - traefik.http.routers.pandit-g.entrypoints=websecure
       - traefik.http.routers.pandit-g.tls.certresolver=letsencrypt
       - traefik.http.routers.pandit-g.service=pandit-g
       - traefik.http.services.pandit-g.loadbalancer.server.port=3000
-      # HTTP → HTTPS redirect
       - traefik.http.routers.pandit-g-http.rule=Host(`panditg.live`) || Host(`www.panditg.live`)
       - traefik.http.routers.pandit-g-http.entrypoints=web
       - traefik.http.routers.pandit-g-http.middlewares=pandit-g-redirect
       - traefik.http.middlewares.pandit-g-redirect.redirectscheme.scheme=https
       - traefik.http.middlewares.pandit-g-redirect.redirectscheme.permanent=true
-
-networks:
-  traefik-proxy:
-    external: true
