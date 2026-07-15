@@ -1,181 +1,215 @@
-# Pandit G — Hostinger VPS Deployment Guide
+# Pandit G — Hostinger VPS + Docker Deployment Guide
 
-Complete step-by-step guide to move **Pandit G** from **Vercel** to your **Hostinger VPS**, using **Docker Manager** + **SSH**, and connecting the domain `panditg.live`.
+Final reference for deploying **Pandit G** (Next.js WhatsApp astrology bot) on a **Hostinger VPS** with **Docker Manager** + **SSH**.
 
----
+Domain used in this guide: **`panditg.live`**
 
-## What you will end up with
-
-
-| Piece                    | URL / place                                                                           |
-| ------------------------ | ------------------------------------------------------------------------------------- |
-| Website + API            | `https://panditg.live`                                                                |
-| Admin panel              | `https://panditg.live/admin`                                                          |
-| WhatsApp webhook         | `https://panditg.live/api/webhooks/whatsapp`                                          |
-| Razorpay webhook         | `https://panditg.live/api/webhooks/razorpay` (confirm path in your code if different) |
-| App container            | Docker (`pandit-g`)                                                                   |
-| Reverse proxy + free SSL | Traefik (Hostinger Docker Manager)                                                    |
-
-
-MongoDB stays on **MongoDB Atlas** (your existing `MONGODB_URI`) — you do **not** need to run Mongo on the VPS unless you want to later.
+Use this document every time you redeploy or set up a new Hostinger VPS.
 
 ---
 
+## Table of contents
 
-
-## Prerequisites checklist
-
-Before you start, have ready:
-
-- [ ] Hostinger VPS with **Docker** template / Docker Manager enabled  
-- [ ] VPS **public IP** (hPanel → VPS → overview)  
-- [ ] **SSH** access (root or sudo user)  
-- [ ] Domain `panditg.live` (DNS editable — Hostinger DNS Manager or wherever domain is registered)  
-- [ ] GitHub repo for this project (private is fine)  
-- [ ] All secrets from local `.env.local` (WhatsApp, xAI, Mongo, Razorpay, admin)  
-- [ ] Access to **Meta Developer Console** (WhatsApp webhook)  
-- [ ] Access to **Razorpay Dashboard** (webhooks)
+1. [How it works](#1-how-it-works)
+2. [Files in this repo](#2-files-in-this-repo)
+3. [Prerequisites](#3-prerequisites)
+4. [Step 1 — Point DNS](#4-step-1--point-dns)
+5. [Step 2 — Deploy Traefik](#5-step-2--deploy-traefik)
+6. [Step 3 — Verify Traefik (host network)](#6-step-3--verify-traefik-host-network)
+7. [Step 4 — Clone the app on the VPS](#7-step-4--clone-the-app-on-the-vps)
+8. [Step 5 — Create `.env.local`](#8-step-5--create-envlocal)
+9. [Step 6 — Build and start Pandit G](#9-step-6--build-and-start-pandit-g)
+10. [Step 7 — Verify website + SSL](#10-step-7--verify-website--ssl)
+11. [Step 8 — Update WhatsApp webhook](#11-step-8--update-whatsapp-webhook)
+12. [Step 9 — Update Razorpay webhook](#12-step-9--update-razorpay-webhook)
+13. [Step 10 — Leave Vercel](#13-step-10--leave-vercel)
+14. [Day-2 operations](#14-day-2-operations)
+15. [Troubleshooting](#15-troubleshooting)
+16. [Quick command sheet](#16-quick-command-sheet)
 
 ---
 
-
-
-## Architecture (simple)
+## 1. How it works
 
 ```
 Internet
    │
    ▼
-panditg.live  (DNS A record → VPS IP)
+DNS: panditg.live  →  VPS public IP
    │
    ▼
-Traefik (ports 80 + 443, Let's Encrypt SSL)
+Traefik  (Hostinger Docker project, network_mode: host)
+   listens on :80 and :443
+   auto SSL via Let's Encrypt
    │
    ▼
-Docker container: pandit-g  (Next.js on port 3000)
+pandit-g container  (Next.js on port 3000)
+   published as 127.0.0.1:3000
+   discovered by Traefik via Docker labels
    │
    ├── WhatsApp Cloud API
    ├── xAI Grok
-   ├── MongoDB Atlas
+   ├── MongoDB Atlas (external)
    └── Razorpay
 ```
 
-Why Traefik? Hostinger Docker Manager expects it so **HTTPS works automatically** and port 80/443 are not fought over by every app.
+### Important facts (learned on Hostinger)
+
+| Fact | Detail |
+|------|--------|
+| Two separate Docker projects | **1)** Traefik  **2)** Pandit G — do not put the app inside Traefik |
+| Traefik network | Usually **`host`** — not `traefik-proxy` |
+| Shared bridge network | **Not required** for this Hostinger Traefik template |
+| Build method | Prefer **SSH** `docker compose up -d --build` |
+| Database | Keep **MongoDB Atlas** (no Mongo container needed) |
 
 ---
 
+## 2. Files in this repo
 
+| File | Purpose |
+|------|---------|
+| `Dockerfile` | Builds production Next.js standalone image |
+| `docker-compose.yml` | Runs `pandit-g` + Traefik labels for `panditg.live` |
+| `.env.example` | Template — copy to `.env.local` on the VPS |
+| `.dockerignore` | Keeps secrets / junk out of the image |
+| `next.config.ts` | `output: "standalone"` required for Docker |
+| `deployment.md` | This guide |
 
-# PART A — DNS for `panditg.live`
+---
 
+## 3. Prerequisites
 
+Before starting:
 
-## Step A1 — Find your VPS IP
+- [ ] Hostinger VPS with **Docker Manager** enabled
+- [ ] SSH access as `root` (or sudo user)
+- [ ] VPS **public IPv4**
+- [ ] Domain **`panditg.live`** (DNS editable)
+- [ ] Code on **GitHub** (private OK)
+- [ ] Secrets ready: WhatsApp, xAI, MongoDB, Razorpay, admin
+- [ ] Meta Developer Console access
+- [ ] Razorpay Dashboard access
 
-1. Hostinger **hPanel** → **VPS** → select your server (`srv….hstgr.cloud`).
-2. Copy the **IPv4 address**.
+Suggested app path on VPS:
 
+```text
+/opt/pandit-g
+```
 
+---
 
-## Step A2 — Point the domain
+## 4. Step 1 — Point DNS
 
-In **DNS Manager** for `panditg.live` (Hostinger sidebar **DNS Manager**, or your registrar):
+### 1.1 Copy VPS IP
 
+hPanel → **VPS** → your server → copy **IPv4**.
 
-| Type  | Name / Host | Value         | TTL         |
-| ----- | ----------- | ------------- | ----------- |
-| **A** | `@`         | `YOUR_VPS_IP` | 300 or Auto |
-| **A** | `www`       | `YOUR_VPS_IP` | 300 or Auto |
+### 1.2 Create DNS records
 
+In Hostinger **DNS Manager** (or your registrar) for `panditg.live`:
 
-Notes:
+| Type | Name | Value | TTL |
+|------|------|--------|-----|
+| A | `@` | `YOUR_VPS_IP` | 300 / Auto |
+| A | `www` | `YOUR_VPS_IP` | 300 / Auto |
 
-- Remove old A/CNAME records that point to **Vercel** (`cname.vercel-dns.com`, etc.).  
-- Wait **5–30 minutes** (sometimes up to a few hours).  
-- Check from your PC:
+### 1.3 Remove old Vercel records
+
+Delete any A/CNAME pointing to Vercel (`cname.vercel-dns.com`, old `*.vercel.app`, etc.).
+
+### 1.4 Wait and verify
 
 ```bash
 nslookup panditg.live
 nslookup www.panditg.live
 ```
 
-Both should show your VPS IP before you expect SSL to work.
+Both must show your VPS IP before SSL will work.
 
 ---
 
+## 5. Step 2 — Deploy Traefik
 
+Traefik is only the reverse proxy + free SSL. It is **not** the app.
 
-# PART B — Deploy Traefik (SSL reverse proxy)
+### 2.1 Open Docker Manager
 
+1. hPanel → **VPS** → **Manage**
+2. Left menu → **Docker Manager**
+3. Open **Projects**
 
+### 2.2 One-click Traefik
 
-## Step B1 — Open Docker Manager
+1. Click **Compose**
+2. Choose **One click deploy (New)** (or **Catalog**)
+3. Deploy **Traefik**
+4. Set **ACME_EMAIL** to a real email (Let's Encrypt notices)
+5. Wait until status is **Running**
 
-1. hPanel → **VPS** → **Manage** your server.
-2. Left sidebar → **Docker Manager**.
-3. You should see **Projects** (as in your screenshot).
+Example project names you may see:
 
+- Project: `traefik-tvdm`
+- Container: `traefik-tvdm-traefik-1`
 
+**Stop here for Traefik.** Do not add Pandit G as a container inside this project.
 
-## Step B2 — One-click Traefik ✅ (you are here)
+---
 
-Your screenshot shows this is done correctly:
+## 6. Step 3 — Verify Traefik (host network)
 
-| Check | Your value |
-|--------|------------|
-| Project | `traefik-tvdm` |
-| Container | `traefik-tvdm-traefik-1` |
-| Status | **Running** |
-| ACME email | set (for Let's Encrypt SSL) |
+Open **Terminal** (Docker Manager or SSH).
 
-**Do not put Pandit G inside this Traefik project.** Keep Traefik alone. The app is a **second** Docker project that joins Traefik’s network.
+### 3.1 Confirm Traefik is running
 
-
-
-## Step B3 — Confirmed Hostinger Traefik mode ✅
-
-Your inspect output means Traefik runs with:
-
-```text
-Network = host
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 ```
 
-That is **normal on Hostinger**. There is **no** `traefik-proxy` / `traefik-tvdm_default` bridge network to join.
+### 3.2 Confirm network mode
 
-What this means for Pandit G:
+```bash
+docker inspect traefik-tvdm-traefik-1 --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}'
+```
 
-- App is a **separate** `docker compose` project  
-- Traefik finds it via **Docker labels** + `docker.sock`  
-- App publishes `127.0.0.1:3000` (localhost only)  
-- Public HTTPS goes through Traefik on ports **80/443**
+Expected on Hostinger:
 
-Confirm Traefik owns web ports:
+```text
+host
+```
+
+If the container name differs, find it with `docker ps` and re-run inspect with that name.
+
+### 3.3 Confirm ports 80 and 443
 
 ```bash
 ss -tlnp | grep -E ':80|:443'
 ```
 
-You should see something listening on `80` and `443`.
+Something must be listening on **80** and **443**.
 
-Repo `docker-compose.yml` is already updated for this **host-mode Traefik** setup (no external network required).
+### 3.4 Network list is often only defaults
+
+```bash
+docker network ls
+```
+
+Seeing only `bridge` / `host` / `none` is **normal** when Traefik uses `host` networking.  
+You do **not** need to create `traefik-proxy`.
 
 ---
 
+## 7. Step 4 — Clone the app on the VPS
 
+Still in SSH / Terminal:
 
-# PART C — Put the code on the VPS (SSH)  ← do this next
-
-Docker Manager UI alone cannot build your Next.js app reliably. Use **SSH / Terminal**.
-
-## Step C1 — Stay in Terminal (you are already root@srv1829928)
-
-## Step C2 — Install git (if missing)
+### 4.1 Install git (if needed)
 
 ```bash
 apt update && apt install -y git
 ```
 
-## Step C3 — Clone the repository
+### 4.2 Clone repository
 
 ```bash
 mkdir -p /opt
@@ -184,199 +218,180 @@ git clone https://github.com/YOUR_USERNAME/pandit-g.git
 cd pandit-g
 ```
 
-Private repo example:
+Private repo:
 
 ```bash
 git clone https://YOUR_GITHUB_TOKEN@github.com/YOUR_USERNAME/pandit-g.git
 ```
 
-## Step C4 — Create production `.env`
+or with SSH key:
+
+```bash
+git clone git@github.com:YOUR_USERNAME/pandit-g.git
+```
+
+---
+
+## 8. Step 5 — Create `.env.local`
+
+This project uses **`.env.local` only** (same as local dev).  
+`docker-compose.yml` loads `env_file: .env.local`.
+
+### 5.1 Create file
 
 ```bash
 cd /opt/pandit-g
-cp .env.example .env
-nano .env
+cp .env.example .env.local
+nano .env.local
 ```
 
-Paste values from your local `.env.local`, but **must** set:
+### 5.2 Required production values
+
+Must set:
 
 ```env
 APP_URL=https://panditg.live
 ```
 
-Also keep WhatsApp / XAI / Mongo / Razorpay / Admin vars.
+Also fill:
 
-Save: `Ctrl+O`, Enter, `Ctrl+X`.
+- `WHATSAPP_*`
+- `XAI_*`
+- `MONGODB_URI` / `MONGODB_DB_NAME`
+- `RAZORPAY_*`
+- `ADMIN_ID` / `ADMIN_PASSWORD` / `ADMIN_SESSION_SECRET`
+- `INTERNAL_API_SECRET` (long random string)
+
+Recommended typing delays on VPS (no Hobby 10s limit):
+
+```env
+FUNNEL_READING_DELAY_MS=4000
+TYPING_MS_PER_CHAR=40
+TYPING_BASE_MS=2000
+TYPING_MIN_MS=2500
+TYPING_MAX_MS=20000
+```
+
+Save in nano: `Ctrl+O` → Enter → `Ctrl+X`.
+
+### 5.3 Lock permissions
 
 ```bash
-chmod 600 /opt/pandit-g/.env
+chmod 600 /opt/pandit-g/.env.local
 ```
+
+Never commit `.env.local` to Git (already covered by `.gitignore` → `.env*`).
+
+### 5.4 MongoDB Atlas
+
+In Atlas Network Access, allow your **VPS IP** (or temporarily `0.0.0.0/0` only if you understand the risk).
 
 ---
 
+## 9. Step 6 — Build and start Pandit G
 
-
-# PART D — Build & run Pandit G
-
-
-
-## Step D1 — Build and start
+### 6.1 Build + run
 
 ```bash
 cd /opt/pandit-g
 docker compose up -d --build
 ```
 
-First build takes **5–15 minutes**.
+First build usually takes **5–15 minutes**.
 
-Watch logs:
+### 6.2 Follow logs
 
 ```bash
 docker compose logs -f pandit-g
 ```
 
-You should see Next.js listening on port 3000. `Ctrl+C` stops following logs (container keeps running).
+You should see Next.js listening on port **3000**.  
+Exit logs with `Ctrl+C` (container keeps running).
 
-## Step D3 — Check container status
+### 6.3 Confirm container is up
 
 ```bash
-docker ps
 docker compose ps
+docker ps
 ```
 
-`pandit-g` should be **Up**.
+Expected container name: `pandit-g`.
 
-## Step D4 — Test from the VPS
+### 6.4 Local smoke test on the VPS
 
 ```bash
 curl -I http://127.0.0.1:3000
 ```
 
-Or through Traefik (after DNS + SSL):
+Should return HTTP headers (not connection refused).
 
-```bash
-curl -I https://panditg.live
-```
+---
 
-Open in browser:
+## 10. Step 7 — Verify website + SSL
 
-- `https://panditg.live`  
+### 7.1 Browser checks
+
+Open:
+
+- `https://panditg.live`
+- `https://www.panditg.live`
 - `https://panditg.live/admin`
 
----
+SSL may take a few minutes after DNS + first Traefik request.
 
+### 7.2 If HTTPS fails
 
-
-# PART E — Optional: use Hostinger Docker Manager UI
-
-You can still manage / restart from the panel.
-
-### Option E1 — Compose manually (YAML already running via SSH)
-
-If the project was started by SSH `docker compose`, it often appears under Docker Manager **Projects**. You can:
-
-- View logs  
-- Restart / stop  
-- Redeploy after edits
-
-
-
-### Option E2 — Deploy / redeploy from panel
-
-1. Docker Manager → **Compose** → **Compose manually**.
-2. Project name: `pandit-g`.
-3. Paste contents of `docker-compose.yml`.
-4. **Important:** panel paste alone may **not** upload your source code. Prefer:
-  - SSH clone in `/opt/pandit-g`, then  
-  - In terminal: `docker compose up -d --build`
-
-
-
-### Option E3 — Compose from URL
-
-Works best if the **raw** `docker-compose.yml` is public **and** Hostinger can build from that repo. For private Next.js apps, **SSH clone + build** is more reliable.
+1. Re-check DNS A records  
+2. Confirm Traefik is running  
+3. Confirm `pandit-g` is running  
+4. Check Traefik logs in Docker Manager → Traefik project → **Logs**
 
 ---
 
+## 11. Step 8 — Update WhatsApp webhook
 
+Meta Developer Console → your app → WhatsApp → Configuration / Webhooks:
 
-# PART F — Update WhatsApp webhook (leave Vercel)
+| Field | Value |
+|--------|--------|
+| Callback URL | `https://panditg.live/api/webhooks/whatsapp` |
+| Verify token | Same as `WHATSAPP_VERIFY_TOKEN` in VPS `.env.local` |
 
+Click **Verify and save**. Subscribe to the same fields as before (at least **messages**).
 
+Test: send `Hi` to the business WhatsApp number.
 
-## Step F1 — Meta Developer Console
+---
 
-1. [developers.facebook.com](https://developers.facebook.com) → your app.
-2. **WhatsApp** → **Configuration** (or Webhooks).
-3. Set:
+## 12. Step 9 — Update Razorpay webhook
 
+Razorpay Dashboard → Webhooks:
 
-| Field        | Value                                         |
-| ------------ | --------------------------------------------- |
-| Callback URL | `https://panditg.live/api/webhooks/whatsapp`  |
-| Verify token | Same as `WHATSAPP_VERIFY_TOKEN` in VPS `.env` |
-
-
-1. Click **Verify and save**.
-2. Subscribe to webhook fields you already use (at least **messages**).
-
-
-
-## Step F2 — Quick verify
-
-Send `Hi` to the WhatsApp business number.  
-You should get Pandit G’s intro reply within a few seconds (plus typing delay).
-
-If verify fails:
-
-- Domain SSL must be green (https works in browser).  
-- Container must be running.  
-- Token must match `.env` exactly (no extra spaces/quotes).
-
-Check logs:
-
-```bash
-cd /opt/pandit-g && docker compose logs -f --tail=100 pandit-g
+```text
+https://panditg.live/api/webhooks/razorpay
 ```
 
----
+Webhook secret must match `RAZORPAY_WEBHOOK_SECRET` in `.env.local`.
 
+Keep the same payment events as before. Run a small test payment after DNS/SSL are stable.
 
-
-# PART G — Update Razorpay webhooks
-
-1. Razorpay Dashboard → **Account & Settings** → **Webhooks** (or Developers → Webhooks).
-2. Change URL from old Vercel host to:
-  ```text
-   https://panditg.live/api/webhooks/razorpay
-  ```
-   (Use the exact path your repo already exposes — if your route name differs, match the code under `app/api/...`.)
-3. Secret must match `RAZORPAY_WEBHOOK_SECRET` in VPS `.env`.
-4. Keep the same events as before (payment link paid / payment captured, etc.).
-
-Do a small test payment after DNS is stable.
+> Use **live** Razorpay keys for production. `rzp_test_...` is only for testing.
 
 ---
 
+## 13. Step 10 — Leave Vercel
 
+Only after WhatsApp + website work on `panditg.live`:
 
-# PART H — Retire Vercel cleanly
-
-1. Confirm WhatsApp + website work on `panditg.live`.
-2. In Meta / Razorpay, **no** remaining `*.vercel.app` URLs.
-3. DNS: no Vercel CNAMEs left.
-4. Vercel project → **Settings** → pause or delete when ready (optional).
-5. Remove Vercel env vars copies you’d rather not leave hanging.
+1. Confirm Meta and Razorpay URLs no longer use `*.vercel.app`
+2. Confirm DNS has no Vercel CNAMEs
+3. Pause or delete the Vercel project when ready
 
 ---
 
+## 14. Day-2 operations
 
-
-# PART I — Day-2 operations (SSH)
-
-
-
-## Redeploy after code changes
+### Redeploy after code change
 
 ```bash
 cd /opt/pandit-g
@@ -384,78 +399,41 @@ git pull
 docker compose up -d --build
 ```
 
-
-
-## View logs
+### Change env only
 
 ```bash
-docker compose logs -f --tail=200 pandit-g
-```
-
-
-
-## Restart only the app
-
-```bash
-docker compose restart pandit-g
-```
-
-
-
-## Update only `.env` (no rebuild)
-
-```bash
-nano /opt/pandit-g/.env
-docker compose up -d
-```
-
-(`env_file` is re-read on recreate; if values don’t apply, run:)
-
-```bash
+nano /opt/pandit-g/.env.local
+cd /opt/pandit-g
 docker compose up -d --force-recreate pandit-g
 ```
 
-
-
-## Stop / start
+### Logs
 
 ```bash
+cd /opt/pandit-g
+docker compose logs -f --tail=200 pandit-g
+```
+
+### Restart / stop / start
+
+```bash
+cd /opt/pandit-g
+docker compose restart pandit-g
 docker compose stop
 docker compose start
 ```
 
-
-
-## Full wipe container (keeps code + .env)
+### Full recreate
 
 ```bash
+cd /opt/pandit-g
 docker compose down
 docker compose up -d --build
 ```
 
----
+### Firewall (UFW example)
 
-
-
-# PART J — Firewall & security
-
-
-
-## Firewall (Hostinger / UFW)
-
-Allow:
-
-
-| Port    | Why                            |
-| ------- | ------------------------------ |
-| **22**  | SSH                            |
-| **80**  | HTTP (Traefik / Let’s Encrypt) |
-| **443** | HTTPS                          |
-
-
-Do **not** expose Mongo ports. App port **3000** should stay internal (Traefik → container).
-
-Example (if using UFW):
+Allow SSH + HTTP + HTTPS only:
 
 ```bash
 ufw allow 22/tcp
@@ -465,202 +443,117 @@ ufw enable
 ufw status
 ```
 
-
-
-## Secrets hygiene
-
-- Strong `ADMIN_PASSWORD` and `ADMIN_SESSION_SECRET`  
-- Strong `INTERNAL_API_SECRET`  
-- Rotate WhatsApp / Razorpay tokens if they were ever committed to git  
-- Prefer private GitHub repo
+Do **not** expose Mongo. Keep app port `3000` on `127.0.0.1` only (already done in compose).
 
 ---
 
+## 15. Troubleshooting
 
+### Traefik inspect shows `host`
 
-# PART K — Typing delay on VPS (better than Hobby)
+Correct for Hostinger. Do not look for `traefik-proxy`. Use the compose file in this repo (labels + `127.0.0.1:3000`).
 
-On Vercel Hobby, delay was capped. On VPS you can use longer natural typing in `.env`:
+### `docker network ls` has no traefik network
 
-```env
-FUNNEL_READING_DELAY_MS=4000
-TYPING_MS_PER_CHAR=40
-TYPING_BASE_MS=2000
-TYPING_MIN_MS=2500
-TYPING_MAX_MS=20000
-APP_URL=https://panditg.live
-```
+Normal with host-mode Traefik.
 
-`APP_URL` must be your real domain so delayed-send / absolute links resolve correctly.
-
----
-
-
-
-# PART L — Troubleshooting
-
-
-
-### 1) `https://panditg.live` does not load
-
-- DNS A record points to VPS IP? (`nslookup panditg.live`)  
-- Traefik running? (`docker ps`)  
-- Container on same network as Traefik?  
+### Website 502 / not loading
 
 ```bash
-docker inspect traefik-tvdm-traefik-1 --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}'
-docker inspect pandit-g --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}'
+docker ps
+curl -I http://127.0.0.1:3000
+docker compose -f /opt/pandit-g/docker-compose.yml logs --tail=100 pandit-g
 ```
 
-Both containers must list the **same** network name.
+Also confirm DNS points to this VPS.
 
+### SSL stuck / certificate error
 
+- DNS must already resolve to VPS IP  
+- Ports 80/443 must be open  
+- Wait a few minutes after first deploy  
+- Check Traefik container logs  
 
-### 2) SSL certificate pending / browser warning
+### WhatsApp verify fails
 
-- DNS must already point to VPS.  
-- Ports 80/443 open.  
-- Wait a few minutes after first deploy; Traefik + Let’s Encrypt need a successful HTTP challenge.  
-- Check Traefik logs in Docker Manager or:
+- URL exact: `https://panditg.live/api/webhooks/whatsapp`  
+- Token matches `.env.local`  
+- HTTPS works in browser  
+- Container healthy  
 
-```bash
-docker logs <traefik_container_name>
-```
+### Build fails / OOM on small VPS
 
-
-
-### 3) WhatsApp webhook verify fails
-
-- Callback URL exact: `https://panditg.live/api/webhooks/whatsapp`  
-- `WHATSAPP_VERIFY_TOKEN` matches Meta  
-- App container healthy
-
-
-
-### 4) Build fails on VPS (out of memory)
-
-Next.js builds need RAM. On small VPS:
+Add temporary swap, then rebuild:
 
 ```bash
-# temporary swap (2GB example)
 fallocate -l 2G /swapfile
 chmod 600 /swapfile
 mkswap /swapfile
 swapon /swapfile
-```
-
-Then rebuild:
-
-```bash
 cd /opt/pandit-g && docker compose up -d --build
 ```
 
+### Mongo connection errors
 
+- Atlas Network Access must allow VPS IP  
+- `MONGODB_URI` correct in `/opt/pandit-g/.env.local`  
+- Recreate container after env changes  
 
-### 5) `external network … not found`
-
-Your Traefik project is `traefik-tvdm` → network is usually `traefik-tvdm_default`.
-
-```bash
-docker inspect traefik-tvdm-traefik-1 --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}'
-```
-
-Put that exact name into `docker-compose.yml` (`name:` + `traefik.docker.network=`), then:
-
-```bash
-cd /opt/pandit-g && docker compose up -d --build
-```
-
-Do **not** randomly `docker network create traefik-proxy` unless Traefik is also on that network.
-
-### 6) Container runs but site 502
-
-- Traefik label port must be **3000** (matches Next.js).  
-- Container must be on Traefik network.  
-- Recreate:
-
-```bash
-cd /opt/pandit-g && docker compose up -d --force-recreate
-```
-
-
-
-### 7) Delayed typing / internal send fails
+### Typing / delayed-send issues
 
 Ensure:
 
 ```env
 APP_URL=https://panditg.live
-INTERNAL_API_SECRET=...same secret used by delayed-send...
+INTERNAL_API_SECRET=your-long-secret
 ```
 
 ---
 
-
-
-# PART M — Quick command cheat sheet
+## 16. Quick command sheet
 
 ```bash
-# Go to project
-cd /opt/pandit-g
+# Traefik status / network mode
+docker ps
+docker inspect traefik-tvdm-traefik-1 --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}'
+ss -tlnp | grep -E ':80|:443'
 
-# Deploy / update
+# App deploy / update
+cd /opt/pandit-g
 git pull
 docker compose up -d --build
-
-# Logs
 docker compose logs -f pandit-g
-
-# Status
 docker compose ps
-docker ps
 
-# Shell inside container (debug)
-docker compose exec pandit-g sh
+# Local check
+curl -I http://127.0.0.1:3000
 ```
 
 ---
 
+## Ideal first-time order
 
-
-# PART N — Order of operations (do this sequence)
-
-1. Point DNS `panditg.live` → VPS IP
-2. Deploy **Traefik** from Docker Manager
-3. SSH → `git clone` into `/opt/pandit-g`
-4. Create `.env` from `.env.example` (`APP_URL=https://panditg.live`)
-5. `docker compose up -d --build`
-6. Open `https://panditg.live` (and `/admin`)
-7. Update **WhatsApp** webhook URL + verify
-8. Update **Razorpay** webhook URL
-9. Test WhatsApp chat + a payment
-10. Remove Vercel DNS / old webhooks
+1. DNS A records for `panditg.live` + `www` → VPS IP  
+2. Deploy Traefik from Docker Manager (leave it alone)  
+3. Verify Traefik = `host` network + ports 80/443  
+4. `git clone` into `/opt/pandit-g`  
+5. Create `.env.local` with `APP_URL=https://panditg.live`  
+6. `docker compose up -d --build`  
+7. Open site + `/admin`  
+8. Update WhatsApp webhook  
+9. Update Razorpay webhook  
+10. Test chat + payment → then remove Vercel  
 
 ---
 
+## Security reminders
 
-
-## Files added for Docker (in this repo)
-
-
-| File                 | Purpose                                    |
-| -------------------- | ------------------------------------------ |
-| `Dockerfile`         | Builds Next.js standalone production image |
-| `docker-compose.yml` | App + Traefik labels for `panditg.live`    |
-| `.dockerignore`      | Keeps image small / excludes secrets       |
-| `.env.example`       | Template for VPS `.env`                    |
-| `next.config.ts`     | `output: "standalone"` for Docker          |
-| `deployment.md`      | This guide                                 |
-
+- Never paste root passwords into chat tools  
+- Use strong `ADMIN_PASSWORD`, `ADMIN_SESSION_SECRET`, `INTERNAL_API_SECRET`  
+- Prefer private GitHub repo  
+- Use Razorpay **live** keys only in real production  
+- Keep `.env.local` chmod `600` and out of git  
 
 ---
 
-
-
-## Support notes
-
-- Prefer **SSH build** for reliability; use Docker Manager for logs/restart/UI.  
-- Keep Mongo on Atlas unless you intentionally migrate the database.  
-- After every `git pull` that changes dependencies or `Dockerfile`, use `--build`.
-
-Once DNS + Traefik + `.env` + webhooks are correct, you are fully off Vercel.
+*Last updated for Hostinger Docker Manager with Traefik in `host` network mode.*
