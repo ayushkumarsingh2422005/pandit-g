@@ -17,7 +17,7 @@ services:
     container_name: pandit-g
     restart: unless-stopped
     env_file:
-      - .env
+      - .env.local
     environment:
       NODE_ENV: production
       PORT: "3000"
