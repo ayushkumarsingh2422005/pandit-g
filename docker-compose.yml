@@ -1,0 +1,53 @@
+# Pandit G — Hostinger VPS + Docker Manager
+#
+# Prerequisites:
+# 1) DNS A records for panditg.live (and www) → VPS IP
+# 2) Traefik project deployed from Hostinger Docker Manager catalog
+#    (creates external network: traefik-proxy)
+# 3) File `.env` next to this compose (copy from .env.example)
+#
+# Deploy (SSH):
+#   cd /opt/pandit-g && docker compose up -d --build
+#
+# Or paste this file into Docker Manager → Compose → Compose manually
+# (build context must be the cloned repo on the VPS — prefer SSH build).
+
+services:
+  pandit-g:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pandit-g
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+      APP_URL: https://panditg.live
+    # Do NOT publish 80/443 here — Traefik owns those ports.
+    # Optional local debug only:
+    # ports:
+    #   - "3000:3000"
+    networks:
+      - traefik-proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-proxy
+      # Main domain
+      - traefik.http.routers.pandit-g.rule=Host(`panditg.live`) || Host(`www.panditg.live`)
+      - traefik.http.routers.pandit-g.entrypoints=websecure
+      - traefik.http.routers.pandit-g.tls.certresolver=letsencrypt
+      - traefik.http.routers.pandit-g.service=pandit-g
+      - traefik.http.services.pandit-g.loadbalancer.server.port=3000
+      # HTTP → HTTPS redirect
+      - traefik.http.routers.pandit-g-http.rule=Host(`panditg.live`) || Host(`www.panditg.live`)
+      - traefik.http.routers.pandit-g-http.entrypoints=web
+      - traefik.http.routers.pandit-g-http.middlewares=pandit-g-redirect
+      - traefik.http.middlewares.pandit-g-redirect.redirectscheme.scheme=https
+      - traefik.http.middlewares.pandit-g-redirect.redirectscheme.permanent=true
+
+networks:
+  traefik-proxy:
+    external: true

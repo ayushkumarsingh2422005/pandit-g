@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Smaller production image for Docker / VPS
+  output: "standalone",
   env: {
     NEXT_PUBLIC_CONSULTATION_PRICE_INR:
       process.env.CONSULTATION_PRICE_INR ?? "151",
