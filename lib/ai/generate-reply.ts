@@ -16,6 +16,10 @@ import {
   buildPhaseRetryInstruction,
   replyViolatesPhase,
 } from "./phase-reply-validator";
+import {
+  redactPaymentUrlsInHistory,
+  stripPaymentUrls,
+} from "@/lib/payments/payment-link-text";
 
 export type GeneratePanditGReplyInput = {
   phone: string;
@@ -51,9 +55,10 @@ export async function generatePanditGReply({
     : [];
 
   const isContinuingConversation = history.length > 0;
+  const safeHistory = redactPaymentUrlsInHistory(history);
 
   const messages: ModelMessage[] = [
-    ...history.map((entry) => ({
+    ...safeHistory.map((entry) => ({
       role: entry.role,
       content: entry.content,
     })),
@@ -135,6 +140,9 @@ export async function generatePanditGReply({
   if (!reply) {
     throw new Error("xAI API returned an empty response");
   }
+
+  // Paid session must never paste Razorpay links (model often copies from history)
+  reply = stripPaymentUrls(reply);
 
   if (isDbConfigured()) {
     const nextStage: FunnelStage =

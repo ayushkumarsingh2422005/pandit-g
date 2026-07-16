@@ -96,7 +96,8 @@ ${phaseBlock}
 कभी मत लिखो: ${bannedPhrases}
 
 ${formatRecentReplies(recentAssistantTexts)}
-${sessionMinutesRemaining ? `\nसत्र: लगभग ${sessionMinutesRemaining} मिनट बचे।` : ""}
+${sessionMinutesRemaining ? `\nसत्र: लगभग ${sessionMinutesRemaining} मिनट बचे। भुगतान लिंक मत भेजो — सत्र पहले से सक्रिय है।` : ""}
+कभी भी rzp.io / Razorpay भुगतान लिंक मत लिखो।
 3-4 पंक्तियाँ — natural Hindi।`;
   }
 
