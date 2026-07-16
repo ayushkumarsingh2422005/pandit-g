@@ -82,8 +82,10 @@ export async function generatePanditGReply({
     recentAssistantTexts,
   });
 
+  const languageModel = provider.responses(model);
+
   let { text } = await generateText({
-    model: provider.responses(model),
+    model: languageModel,
     system: systemPrompt,
     messages,
     temperature: isPaidSession ? 0.93 : 0.88,
