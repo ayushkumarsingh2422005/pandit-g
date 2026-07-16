@@ -259,7 +259,9 @@ Also fill:
 - `XAI_*`
 - `MONGODB_URI` / `MONGODB_DB_NAME`
 - `RAZORPAY_*`
-- `ADMIN_ID` / `ADMIN_PASSWORD` / `ADMIN_SESSION_SECRET`
+- `ADMIN_SESSION_SECRET` (required)
+- Brevo: `BREVO_API_KEY`, `BREVO_SENDER_EMAIL`, `BREVO_SENDER_NAME` (password reset)
+- First admin: `npm run seed:admin -- --email=... --password=...` (no public signup)
 - `INTERNAL_API_SECRET` (long random string)
 
 Recommended typing delays on VPS (no Hobby 10s limit):
@@ -549,7 +551,8 @@ curl -I http://127.0.0.1:3000
 ## Security reminders
 
 - Never paste root passwords into chat tools  
-- Use strong `ADMIN_PASSWORD`, `ADMIN_SESSION_SECRET`, `INTERNAL_API_SECRET`  
+- Use strong `ADMIN_SESSION_SECRET`, `INTERNAL_API_SECRET`
+- Seed the first portal admin with `npm run seed:admin` (do not rely on env ADMIN_ID / ADMIN_PASSWORD)  
 - Prefer private GitHub repo  
 - Use Razorpay **live** keys only in real production  
 - Keep `.env.local` chmod `600` and out of git  

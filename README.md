@@ -177,9 +177,13 @@ Verify token / secrets must match `.env.local`.
 
 | | |
 |--|--|
-| URL | `/admin` |
-| Auth | `ADMIN_ID` + `ADMIN_PASSWORD` |
-| Capabilities | Browse chats, open threads, payments view, block / unblock users |
+| URL | `/admin` (login required) |
+| Auth | Dynamic admins in MongoDB (email + password) |
+| First user | `npm run seed:admin -- --email=... --password=...` (no public signup) |
+| Users | Sidebar users icon (next to payments) → add / remove portal admins |
+| Reset | Forgot password → Brevo transactional email |
+
+Capabilities: browse chats, payments, block / unblock WhatsApp clients, manage portal admins.
 
 ---
 
@@ -209,7 +213,7 @@ flowchart LR
 | DB | `MONGODB_URI`, `MONGODB_DB_NAME` |
 | Payments | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` |
 | UX | `FUNNEL_READING_DELAY_MS`, `TYPING_MS_PER_CHAR`, `TYPING_MAX_MS` |
-| Admin | `ADMIN_ID`, `ADMIN_PASSWORD`, `ADMIN_SESSION_SECRET` |
+| Admin | `ADMIN_SESSION_SECRET`, Brevo (`BREVO_API_KEY`, `BREVO_SENDER_EMAIL`) |
 
 Full list: [`.env.example`](./.env.example)
 
