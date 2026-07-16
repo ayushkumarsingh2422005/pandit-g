@@ -23,7 +23,6 @@ import { getConsultationPricing } from "@/lib/config/consultation-pricing";
 import { getOrCreateConsultationPaymentLink } from "@/lib/razorpay/create-payment-link";
 import { isRazorpayConfigured } from "@/lib/razorpay/is-configured";
 import { handleConversationModeration } from "@/lib/moderation/handle-moderation";
-import { downloadWhatsAppMedia } from "../media";
 import { sendHumanTextMessage } from "../human-typing";
 import type { IncomingAiMessage } from "../types";
 
@@ -88,7 +87,6 @@ async function handlePaidConsultationGate(
   message: IncomingAiMessage,
   storedUserMessage: string,
   stage: "reading_delivered" | "active",
-  image?: { data: Uint8Array; mimeType: string },
 ) {
   const access = await getConsultationAccess(message.from);
 
@@ -98,7 +96,6 @@ async function handlePaidConsultationGate(
       phone: message.from,
       userMessage: message.text,
       contactName: message.contactName,
-      image,
       funnelStage: "active",
       sessionMinutesRemaining: access.minutesRemaining,
     });
@@ -176,27 +173,7 @@ async function sendPaymentOfferAfterReading(message: IncomingAiMessage) {
 /** Funnel + AI handler. Read receipt + typing are sent earlier in the webhook route. */
 export async function handleAiMessage(message: IncomingAiMessage) {
   const hasImage = Boolean(message.imageMediaId);
-  let image;
-
-  if (hasImage) {
-    try {
-      image = await downloadWhatsAppMedia(message.imageMediaId!);
-    } catch (error) {
-      console.error("[whatsapp media]", error);
-      try {
-        const startedAt = Date.now();
-        const reply = await generateErrorReply("image_download");
-        await replyAsHuman(message, reply, startedAt);
-      } catch {
-        await replyAsHuman(
-          message,
-          "🙏 फोटो नहीं खुली — कृपया साफ हथेली की फोटो दोबारा भेजिए।",
-        );
-      }
-      return;
-    }
-  }
-
+  // Palm / photo reading removed — we never download media for hastrekha.
   const storedUserMessage = buildStoredUserMessage(message.text, hasImage);
   const history = isDbConfigured()
     ? await getConversationHistory(message.from)
@@ -219,6 +196,32 @@ export async function handleAiMessage(message: IncomingAiMessage) {
   if (moderated) return;
 
   try {
+    // Photo alone never advances the funnel — ask for DOB / time / place.
+    if (hasImage && !detailsComplete && (stage === "initial" || stage === "awaiting_details")) {
+      const startedAt = Date.now();
+      const reply = await generateFunnelReply({
+        stage: stage === "initial" ? "welcome" : "ask_details",
+        phone: message.from,
+        userMessage:
+          message.text.trim() ||
+          "उपयोगकर्ता ने फोटो भेजी है। हस्तरेखा मत करो — जन्म तिथि, समय और स्थान माँगें।",
+        contactName: message.contactName,
+        missingBirthFields: missingBirthFields(
+          history,
+          message.text,
+          hasImage,
+        ),
+      });
+      await persistTurn(
+        message.from,
+        storedUserMessage,
+        reply,
+        message.contactName,
+        "awaiting_details",
+      );
+      await replyAsHuman(message, reply, startedAt);
+      return;
+    }
 
     if (stage === "initial") {
       const startedAt = Date.now();
@@ -273,7 +276,6 @@ export async function handleAiMessage(message: IncomingAiMessage) {
         phone: message.from,
         userMessage: message.text,
         contactName: message.contactName,
-        image,
       });
 
       await persistTurn(
@@ -293,7 +295,6 @@ export async function handleAiMessage(message: IncomingAiMessage) {
         message,
         storedUserMessage,
         stage as "reading_delivered" | "active",
-        image,
       );
       return;
     }
@@ -301,9 +302,11 @@ export async function handleAiMessage(message: IncomingAiMessage) {
     const startedAt = Date.now();
     const reply = await generatePanditGReply({
       phone: message.from,
-      userMessage: message.text,
+      userMessage: hasImage
+        ? message.text.trim() ||
+          "उपयोगकर्ता ने फोटो भेजी। हस्तरेखा मत करो — जन्म विवरण या उनकी बात पर जवाब दो।"
+        : message.text,
       contactName: message.contactName,
-      image,
       funnelStage: stage,
     });
 

@@ -2,7 +2,7 @@
 
 **WhatsApp Vedic astrology consultation bot** — powered by AI, designed to feel like a real pandit on chat.
 
-Pandit G (देवदत्त जोशी, लखनऊ) greets seekers on WhatsApp, collects birth details or a palm photo, delivers a personalized free reading, then continues into a paid consultation with a natural **problem → planetary cause → remedy** flow.
+Pandit G (देवदत्त जोशी, लखनऊ) greets seekers on WhatsApp, collects birth details (date, time, place), delivers a personalized free reading from age and life stage, then continues into a paid consultation with a natural **problem → planetary cause → remedy** flow.
 
 **Live site:** [panditg.live](https://panditg.live)
 
@@ -23,7 +23,7 @@ Pandit G (देवदत्त जोशी, लखनऊ) greets seekers on Wh
 
 Most astrology chatbots either sound robotic or dump planets and remedies in one message. Pandit G is built around a real consultation rhythm:
 
-1. Introduce the pandit and collect birth details / palm photo  
+1. Introduce the pandit and collect birth details (DOB, time, place)  
 2. Share an age-aware free reading (life problems — no graha jargon yet)  
 3. Offer a short paid session via Razorpay  
 4. After payment, talk **step by step**: problem → why (graha / dasha) → upay  
@@ -36,7 +36,7 @@ Replies use a character-based typing delay so the experience feels human, not in
 
 | Area | What you get |
 |------|----------------|
-| **WhatsApp bot** | Full Cloud API webhook, typing indicator, media (palm) support |
+| **WhatsApp bot** | Full Cloud API webhook, typing indicator |
 | **Consultation funnel** | Multi-message birth details, personalized free reading, payment gate |
 | **Paid session** | Phase-aware replies (problem → cause → remedy → follow-up) |
 | **Moderation** | Agent-based moderation with warnings before block |
@@ -191,7 +191,7 @@ Capabilities: browse chats, payments, block / unblock WhatsApp clients, manage p
 
 ```mermaid
 flowchart LR
-  A[User messages] --> B[Intro + ask DOB / palm]
+  A[User messages] --> B[Intro + ask DOB / time / place]
   B --> C[Free age-based reading]
   C --> D[Razorpay offer]
   D --> E[Paid session]

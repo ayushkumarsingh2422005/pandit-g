@@ -17,54 +17,16 @@ import {
   replyViolatesPhase,
 } from "./phase-reply-validator";
 
-export type UserImageInput = {
-  data: Uint8Array;
-  mimeType: string;
-};
-
 export type GeneratePanditGReplyInput = {
   phone: string;
   userMessage: string;
   contactName?: string;
-  image?: UserImageInput;
   funnelStage?: FunnelStage;
   sessionMinutesRemaining?: number;
 };
 
-function buildUserModelMessage(
-  userMessage: string,
-  image?: UserImageInput,
-): UserModelMessage {
-  const trimmed = userMessage.trim();
-  const textForModel = image
-    ? trimmed || "उपयोगकर्ता ने यह फोटो भेजी है — पंडित जी की नज़र से देखकर बताइए।"
-    : trimmed;
-
-  if (!image) {
-    return { role: "user", content: textForModel };
-  }
-
-  return {
-    role: "user",
-    content: [
-      { type: "text", text: textForModel },
-      {
-        type: "file",
-        data: image.data,
-        mediaType: image.mimeType || "image/jpeg",
-      },
-    ],
-  };
-}
-
-function buildStoredUserMessage(userMessage: string, hasImage: boolean): string {
-  const trimmed = userMessage.trim();
-
-  if (hasImage) {
-    return trimmed ? `[फोटो] ${trimmed}` : "[फोटो भेजी]";
-  }
-
-  return trimmed;
+function buildUserModelMessage(userMessage: string): UserModelMessage {
+  return { role: "user", content: userMessage.trim() || "नमस्ते" };
 }
 
 function containsBannedRoboticPhrase(text: string): boolean {
@@ -78,13 +40,11 @@ export async function generatePanditGReply({
   phone,
   userMessage,
   contactName,
-  image,
   funnelStage,
   sessionMinutesRemaining,
 }: GeneratePanditGReplyInput): Promise<string> {
-  const { apiKey, model, visionModel } = getXaiConfig();
+  const { apiKey, model } = getXaiConfig();
   const provider = createXai({ apiKey });
-  const hasImage = Boolean(image);
 
   const history = isDbConfigured()
     ? await getConversationHistory(phone)
@@ -97,7 +57,7 @@ export async function generatePanditGReply({
       role: entry.role,
       content: entry.content,
     })),
-    buildUserModelMessage(userMessage, image),
+    buildUserModelMessage(userMessage),
   ];
 
   const isPaidSession = funnelStage === "active";
@@ -115,7 +75,6 @@ export async function generatePanditGReply({
   const systemPrompt = buildPanditGSystemPrompt({
     contactName,
     isContinuingConversation,
-    hasImage,
     isPaidSession,
     paidConsultationPhase,
     paidSessionContext,
@@ -123,12 +82,8 @@ export async function generatePanditGReply({
     recentAssistantTexts,
   });
 
-  const languageModel = hasImage
-    ? provider.chat(visionModel)
-    : provider.responses(model);
-
   let { text } = await generateText({
-    model: languageModel,
+    model: provider.responses(model),
     system: systemPrompt,
     messages,
     temperature: isPaidSession ? 0.93 : 0.88,
@@ -185,7 +140,7 @@ export async function generatePanditGReply({
 
     await saveConversationTurn(
       phone,
-      buildStoredUserMessage(userMessage, hasImage),
+      userMessage.trim() || "[संदेश]",
       reply,
       contactName,
       nextStage,

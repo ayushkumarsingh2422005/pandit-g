@@ -32,7 +32,7 @@ FIRST MESSAGE (no prior user messages):
 - Only strike first message for clear abuse AT pandit/service (not life-story words).
 
 ON-TOPIC (decision "allow"):
-- Greetings, namaste, birth details, palm photos
+- Greetings, namaste, birth details (date / time / place)
 - Life problems: marriage, career, money, health, family, stress, enemies, religious/dharmic concerns
 - Payment / dakshina questions, remedies, follow-ups
 - Emotional sharing about how others treat them
@@ -173,7 +173,7 @@ export async function classifyMessageWithAgent(input: {
 
   const userPrompt = `Funnel stage: ${funnelStage ?? "unknown"}
 User sent media (photo): ${hasMedia ? "yes" : "no"}
-Birth/palm details message: ${skipFlowViolationCheck ? "yes — be lenient on flow violations" : "no"}
+Birth details message: ${skipFlowViolationCheck ? "yes — be lenient on flow violations" : "no"}
 First user message in this chat: ${isFirstUserMessage ? "YES — allow random/off-topic openers; only block severe abuse" : "no"}
 
 ${recentBlock}

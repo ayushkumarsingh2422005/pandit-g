@@ -4,9 +4,8 @@ import { saveConversationTurn } from "@/lib/db/conversations";
 import { getRazorpayConfig } from "@/lib/razorpay/config";
 import { sendHumanTextMessage } from "@/lib/whatsapp/human-typing";
 
-function buildPaymentSuccessMessage(contactName: string | undefined): string {
-  const greeting = contactName ? `${contactName} जी, ` : "";
-  return `${greeting}दक्षिणा प्राप्त हुई। अब जो भी दिल पर लगा हो वो लिखिए — सुनकर आगे बात करते हैं।`;
+function buildPaymentSuccessMessage(_contactName: string | undefined): string {
+  return `दक्षिणा प्राप्त हुई। अब जो भी दिल पर लगा हो वो लिखिए — सुनकर आगे बात करते हैं।`;
 }
 
 type RazorpayWebhookPayload = {

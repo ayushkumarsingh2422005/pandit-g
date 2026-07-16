@@ -28,7 +28,7 @@ export async function handleConversationModeration(input: {
   text: string;
   hasMedia?: boolean;
   funnelStage?: FunnelStage | null;
-  /** Skip off-topic/repetitive checks when user sends birth details or palm photo. */
+  /** Skip off-topic/repetitive checks when user sends birth details. */
   skipFlowViolationCheck?: boolean;
 }): Promise<boolean> {
   const {

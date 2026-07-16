@@ -2,7 +2,7 @@ const MONTH_NAMES =
   /(january|february|march|april|may|june|july|august|september|october|november|december|जनवरी|फरवरी|मार्च|अप्रैल|मई|जून|जुलाई|अगस्त|सितंबर|अक्टूबर|नवंबर|दिसंबर)/i;
 
 export const DATE_PATTERN =
-  /\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|\d{1,2}\s+\w+\s+\d{4}|\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2}/;
+  /\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|\d{1,2}\s+\w+\s+\d{4}|\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2}|(?:^|[^\d])(?:0?[1-9]|[12]\d|3[01])(?:0?[1-9]|1[0-2])(?:19|20)\d{2}(?:[^\d]|$)/;
 
 const TIME_PATTERN =
   /\d{1,2}\s*:\s*\d{2}|\d{1,2}\s*(am|pm|baje|बजे|vahe|vaje|baje|baj)|सुबह|शाम|दोपहर|doapar|doaphar|dopahar|dopehar|dopeher|noon|dopahar|रात|मध्यरात्रि|subah|shaam|morning|evening|afternoon/i;
@@ -32,17 +32,12 @@ export type BirthSignals = {
   hasDate: boolean;
   hasTime: boolean;
   hasPlace: boolean;
-  hasPhoto: boolean;
 };
 
 export function extractBirthSignals(text: string): BirthSignals {
   const trimmed = normalizeBirthText(text.trim());
-  if (!trimmed) {
-    return { hasDate: false, hasTime: false, hasPlace: false, hasPhoto: false };
-  }
-
-  if (trimmed.startsWith("[फोटो")) {
-    return { hasDate: false, hasTime: false, hasPlace: false, hasPhoto: true };
+  if (!trimmed || trimmed.startsWith("[फोटो")) {
+    return { hasDate: false, hasTime: false, hasPlace: false };
   }
 
   const hasDate =
@@ -50,7 +45,9 @@ export function extractBirthSignals(text: string): BirthSignals {
     MONTH_NAMES.test(trimmed) ||
     /\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{4}/i.test(
       trimmed,
-    );
+    ) ||
+    // Compact DOB like 27061995 / 270695
+    /(?:^|[^\d])(\d{8}|\d{6})(?:[^\d]|$)/.test(trimmed);
   const hasTime = TIME_PATTERN.test(trimmed);
   const hasPlace = hasPlaceInText(trimmed);
   const hasBirthKeyword = BIRTH_KEYWORDS.test(trimmed);
@@ -68,7 +65,6 @@ export function extractBirthSignals(text: string): BirthSignals {
     hasDate: hasDate || (completeInOne && hasBirthKeyword),
     hasTime: hasTime || (completeInOne && hasBirthKeyword),
     hasPlace: hasPlace || (completeInOne && hasBirthKeyword),
-    hasPhoto: false,
   };
 }
 
@@ -87,10 +83,8 @@ function hasPlaceInText(trimmed: string): boolean {
 /** True when the user shared enough birth info in one text message. */
 export function hasBirthDetailsInText(text: string): boolean {
   const signals = extractBirthSignals(text);
-  if (signals.hasPhoto) return true;
-
   const trimmed = text.trim();
-  if (!trimmed) return false;
+  if (!trimmed || trimmed.startsWith("[फोटो")) return false;
 
   if (signals.hasDate && signals.hasTime && signals.hasPlace) return true;
   if (signals.hasDate && signals.hasTime) return true;
@@ -107,15 +101,14 @@ export function hasBirthDetailsInText(text: string): boolean {
 export function hasCompleteBirthDetailsInHistory(
   messages: { role: string; content: string }[],
   currentText = "",
-  hasImage = false,
+  _hasImage = false,
 ): boolean {
-  if (hasImage) return true;
+  // Photos / palm images never complete birth details — only date, time, place.
   if (hasBirthDetailsInText(currentText)) return true;
 
   let hasDate = false;
   let hasTime = false;
   let hasPlace = false;
-  let hasPhoto = false;
 
   const userTexts = messages
     .filter((m) => m.role === "user")
@@ -127,18 +120,17 @@ export function hasCompleteBirthDetailsInHistory(
     hasDate ||= signals.hasDate;
     hasTime ||= signals.hasTime;
     hasPlace ||= signals.hasPlace;
-    hasPhoto ||= signals.hasPhoto;
     if (hasBirthDetailsInText(text)) return true;
   }
 
-  return hasPhoto || (hasDate && hasTime && hasPlace);
+  return hasDate && hasTime && hasPlace;
 }
 
 export function userProvidedDetails(
   text: string,
-  hasImage: boolean,
+  _hasImage: boolean,
 ): boolean {
-  return hasImage || hasBirthDetailsInText(text);
+  return hasBirthDetailsInText(text);
 }
 
 /** What's still missing when details are partial across the chat. */
@@ -147,7 +139,6 @@ export function missingBirthFields(
   currentText = "",
   hasImage = false,
 ): string[] {
-  if (hasImage) return [];
   if (hasCompleteBirthDetailsInHistory(messages, currentText, hasImage)) {
     return [];
   }

@@ -12,7 +12,7 @@ import { isDbConfigured } from "@/lib/db/is-configured";
 export type { FunnelStage };
 
 function userSharedDetails(content: string): boolean {
-  return content.startsWith("[फोटो") || hasBirthDetailsInText(content);
+  return hasBirthDetailsInText(content);
 }
 
 function inferStageFromHistory(
