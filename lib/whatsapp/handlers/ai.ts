@@ -12,6 +12,11 @@ import {
   missingBirthFields,
   userProvidedDetails,
 } from "@/lib/funnel/detect-birth-details";
+import {
+  extractBirthDetailsUniversally,
+  universalBirthContext,
+  universalMissingFields,
+} from "@/lib/funnel/extract-birth-details-ai";
 import { getFunnelReadingDelayMs, sleep } from "@/lib/funnel/config";
 import { resolveFunnelStage } from "@/lib/funnel/state";
 import { getConsultationAccess } from "@/lib/payments/consultation-access";
@@ -178,13 +183,42 @@ export async function handleAiMessage(message: IncomingAiMessage) {
   const history = isDbConfigured()
     ? await getConversationHistory(message.from)
     : [];
-  const detailsInMessage = userProvidedDetails(message.text, hasImage);
-  const detailsComplete = hasCompleteBirthDetailsInHistory(
+  const stage = await resolveFunnelStage(message.from);
+  let detailsInMessage = userProvidedDetails(message.text, hasImage);
+  let detailsComplete = hasCompleteBirthDetailsInHistory(
     history,
     message.text,
     hasImage,
   );
-  const stage = await resolveFunnelStage(message.from);
+  let resolvedMissingBirthFields = missingBirthFields(
+    history,
+    message.text,
+    hasImage,
+  );
+  let resolvedBirthContext: string | undefined;
+
+  // Regex handles common input quickly. Semantic extraction handles arbitrary
+  // formats, fragmented messages, misspellings, reordered and unlabeled data.
+  if (stage === "awaiting_details" && !hasImage) {
+    try {
+      const universal = await extractBirthDetailsUniversally(
+        history,
+        message.text,
+      );
+      if (universal) {
+        resolvedMissingBirthFields = universalMissingFields(universal);
+        resolvedBirthContext = universalBirthContext(universal);
+        detailsComplete = resolvedMissingBirthFields.length === 0;
+        detailsInMessage ||=
+          Boolean(universal.date) ||
+          Boolean(universal.time) ||
+          Boolean(universal.place);
+      }
+    } catch (error) {
+      // xAI extraction outage must not break onboarding; deterministic parser remains.
+      console.warn("[birth details extraction]", error);
+    }
+  }
 
   const moderated = await handleConversationModeration({
     phone: message.from,
@@ -206,11 +240,7 @@ export async function handleAiMessage(message: IncomingAiMessage) {
           message.text.trim() ||
           "उपयोगकर्ता ने फोटो भेजी है। हस्तरेखा मत करो — जन्म तिथि, समय और स्थान माँगें।",
         contactName: message.contactName,
-        missingBirthFields: missingBirthFields(
-          history,
-          message.text,
-          hasImage,
-        ),
+        missingBirthFields: resolvedMissingBirthFields,
       });
       await persistTurn(
         message.from,
@@ -249,11 +279,7 @@ export async function handleAiMessage(message: IncomingAiMessage) {
         phone: message.from,
         userMessage: message.text,
         contactName: message.contactName,
-        missingBirthFields: missingBirthFields(
-          history,
-          message.text,
-          hasImage,
-        ),
+        missingBirthFields: resolvedMissingBirthFields,
       });
       await persistTurn(
         message.from,
@@ -276,6 +302,7 @@ export async function handleAiMessage(message: IncomingAiMessage) {
         phone: message.from,
         userMessage: message.text,
         contactName: message.contactName,
+        birthDetailsContext: resolvedBirthContext,
       });
 
       await persistTurn(

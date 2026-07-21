@@ -49,7 +49,7 @@ const MONTH_TOKEN = Object.keys(MONTH_NUMBER)
  * Actual date detection/parsing always uses parseBirthDateFromText.
  */
 export const DATE_PATTERN =
-  /(?:\d{4}\s*[\/\-\.]\s*\d{1,2}\s*[\/\-\.]\s*\d{1,2}|\d{1,2}\s*[\/\-\.]\s*\d{1,2}\s*[\/\-\.]\s*\d{2,4}|\d{1,2}\s+\d{1,2}\s+\d{2,4}|\d{6,8})/;
+  /(?:\d{4}\s*[\/\-.:]\s*\d{1,2}\s*[\/\-.:]\s*\d{1,2}|\d{1,2}\s*[\/\-.:]\s*\d{1,2}\s*[\/\-.:]\s*\d{2,4}|\d{1,2}\s+\d{1,2}\s+\d{2,4}|\d{6,8})/;
 
 const TIME_PATTERN =
   /(?:[01]?\d|2[0-3])\s*[:.]\s*[0-5]\d|\d{1,2}\s*(am|pm|baje|बजे|vahe|vaje|baje|baj)|सुबह|शाम|दोपहर|doapar|doaphar|dopahar|dopehar|dopeher|noon|dopahar|रात|मध्यरात्रि|subah|shaam|morning|evening|afternoon/i;
@@ -125,7 +125,7 @@ export function parseBirthDateFromText(input: string): Date | null {
   if (!text || text.startsWith("[फोटो")) return null;
 
   const yearFirst = text.match(
-    /(?:^|[^\d])((?:19|20)\d{2})\s*[\/\-\.]\s*(\d{1,2})\s*[\/\-\.]\s*(\d{1,2})(?:[^\d]|$)/,
+    /(?:^|[^\d])((?:19|20)\d{2})\s*[\/\-.:]\s*(\d{1,2})\s*[\/\-.:]\s*(\d{1,2})(?:[^\d]|$)/,
   );
   if (yearFirst) {
     const parsed = validDate(
@@ -137,7 +137,7 @@ export function parseBirthDateFromText(input: string): Date | null {
   }
 
   const dayFirst = text.match(
-    /(?:^|[^\d])(\d{1,2})\s*(?:[\/\-\.]|\s)\s*(\d{1,2})\s*(?:[\/\-\.]|\s)\s*(\d{2,4})(?:[^\d]|$)/,
+    /(?:^|[^\d])(\d{1,2})\s*(?:[\/\-.:]|\s)\s*(\d{1,2})\s*(?:[\/\-.:]|\s)\s*(\d{2,4})(?:[^\d]|$)/,
   );
   if (dayFirst) {
     const parsed = validDate(
@@ -221,7 +221,9 @@ export function extractBirthSignals(text: string): BirthSignals {
   }
 
   const hasDate = parseBirthDateFromText(trimmed) !== null;
-  const hasTime = TIME_PATTERN.test(trimmed);
+  // A colon-formatted DOB such as 12:02:1996 must not also count as birth time.
+  const textWithoutDate = trimmed.replace(DATE_PATTERN, " ");
+  const hasTime = TIME_PATTERN.test(textWithoutDate);
   const hasPlace = hasPlaceInText(trimmed);
   const hasBirthKeyword = BIRTH_KEYWORDS.test(trimmed);
 
@@ -276,6 +278,7 @@ export function hasCompleteBirthDetailsInHistory(
   currentText = "",
   _hasImage = false,
 ): boolean {
+  void _hasImage;
   // Photos / palm images never complete birth details — only date, time, place.
   if (hasBirthDetailsInText(currentText)) return true;
 
@@ -303,6 +306,7 @@ export function userProvidedDetails(
   text: string,
   _hasImage: boolean,
 ): boolean {
+  void _hasImage;
   return hasBirthDetailsInText(text);
 }
 

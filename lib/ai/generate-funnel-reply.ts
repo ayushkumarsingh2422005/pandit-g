@@ -165,6 +165,7 @@ export type GenerateFunnelReplyInput = {
   userMessage: string;
   contactName?: string;
   missingBirthFields?: string[];
+  birthDetailsContext?: string;
 };
 
 export async function generateFunnelReply({
@@ -173,6 +174,7 @@ export async function generateFunnelReply({
   userMessage,
   contactName,
   missingBirthFields,
+  birthDetailsContext,
 }: GenerateFunnelReplyInput): Promise<string> {
   const { apiKey, model } = getXaiConfig();
   const provider = createXai({ apiKey });
@@ -184,6 +186,9 @@ export async function generateFunnelReply({
   const historyWithCurrentMessage = [
     ...history,
     { role: "user", content: userMessage },
+    ...(birthDetailsContext
+      ? [{ role: "user", content: `[सत्यापित जन्म विवरण]\n${birthDetailsContext}` }]
+      : []),
   ];
   const birthProfile =
     stage === "reading"
