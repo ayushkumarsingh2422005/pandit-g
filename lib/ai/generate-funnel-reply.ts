@@ -18,6 +18,28 @@ import {
 
 export type FunnelReplyStage = "welcome" | "ask_details" | "reading";
 
+const INVALID_FREE_READING =
+  /[?？]|क्या जानना|क्या जानना चाहते|आगे क्या|बताइए|बताएं|किस बारे|किस विषय|किस मुद्दे|कुंडली तैयार|देख रहा|देखकर बताऊ|ग्रह|नक्षत्र|दशा|भाव|शनि|राहु|केतु|गुरु|शुक्र|मंगल|बुध|चंद्र|सूर्य|उपाय|मंत्र|दान|पूजा|भुगतान|दक्षिणा|परामर्श|rzp\.io/i;
+
+function freeReadingFallback(profile?: BirthProfile): string {
+  const age = profile?.ageYears;
+
+  if (typeof age === "number" && age <= 22) {
+    return "इस समय पढ़ाई और आगे की दिशा को लेकर मन बार-बार बदलता है। मेहनत करने के बाद भी ध्यान टिकता नहीं और घर की अपेक्षाएँ दबाव बढ़ाती हैं। भीतर से आप अपनी बात कम कहते हैं, इसलिए बेचैनी जमा होती रहती है।";
+  }
+  if (typeof age === "number" && age <= 35) {
+    return "काम और आमदनी को लेकर स्थिरता देर से बनती दिख रही है। रिश्तों और परिवार की अपेक्षाएँ भी मन पर दबाव डालती हैं। मेहनत बहुत होती है, पर परिणाम रुक-रुककर मिलने से आत्मविश्वास कमजोर पड़ता है।";
+  }
+  if (typeof age === "number" && age <= 55) {
+    return "इस समय घर और काम की जिम्मेदारियाँ एक साथ भारी पड़ रही हैं। मेहनत के अनुपात में पैसा या सम्मान देर से मिलता है और परिवार की चिंता मन को खाली नहीं रहने देती। अपनी परेशानी भीतर रखने से थकान और चिड़चिड़ापन भी बढ़ रहा है।";
+  }
+  if (typeof age === "number") {
+    return "परिवार और स्वास्थ्य की चिंता मन पर अधिक रहती है। अपने लोगों के लिए बहुत कुछ करने के बाद भी भीतर अकेलापन और अधूरापन महसूस होता है। पुराने तनाव छूटते नहीं और मन को स्थिर शांति मिलने में रुकावट बनी रहती है।";
+  }
+
+  return "मेहनत के बाद भी चीज़ें रुक-रुककर आगे बढ़ती हैं और मन में अनिश्चितता बनी रहती है। घर की जिम्मेदारियाँ तथा पैसों की चिंता दबाव बढ़ाती हैं। अपनी बात भीतर रखने के कारण थकान और बेचैनी भी जमा होती जा रही है।";
+}
+
 function nameUsageHint(contactName?: string): string {
   if (!contactName) return "";
   return `\nWhatsApp display name (do NOT open every reply with it): ${contactName}. Almost never use "${contactName} जी" — especially not as the first words.`;
@@ -53,6 +75,8 @@ TASK — User wrote something but birth data is incomplete:
 - If birth time/place/date still missing: say without those you cannot assess yet — ask ONLY for what's missing.
 - Do NOT repeat or re-list birth date/time/place already shared in chat history.
 - Do NOT guess their problems or give remedies — no graha, no reading yet.
+- NEVER say "विवरण आ गए हैं", "अब यहाँ की चाल देखकर बताऊँगा", "देख रहा हूँ", or ask them to wait. If anything is missing, explicitly ask for that exact missing field.
+- STRICTLY FORBIDDEN before payment: ग्रह, ग्रहों, दशा, नक्षत्र, कुंडली analysis, उपाय.
 - FORBIDDEN: "अपनी समस्या बताएं" / "क्या समस्या है" / "बताएं किस मुद्दे पर" — after details arrive YOU will tell THEM their problems (personalized reading comes next automatically).
 - NEVER say "जन्म विवरण मिल गया, अब बताएं किस मुद्दे पर" — that is wrong.
 - 2-4 lines, warm and human — not a template repeated every message.
@@ -157,9 +181,13 @@ export async function generateFunnelReply({
     ? await getConversationHistory(phone)
     : [];
 
+  const historyWithCurrentMessage = [
+    ...history,
+    { role: "user", content: userMessage },
+  ];
   const birthProfile =
     stage === "reading"
-      ? buildBirthProfileFromHistory(history)
+      ? buildBirthProfileFromHistory(historyWithCurrentMessage)
       : undefined;
 
   const messages: ModelMessage[] = [
@@ -170,17 +198,41 @@ export async function generateFunnelReply({
     buildUserMessage(userMessage, stage),
   ];
 
+  const languageModel = provider.responses(model);
+  const systemPrompt = systemForStage(
+    stage,
+    contactName,
+    missingBirthFields,
+    birthProfile,
+  );
   const { text } = await generateText({
-    model: provider.responses(model),
-    system: systemForStage(stage, contactName, missingBirthFields, birthProfile),
+    model: languageModel,
+    system: systemPrompt,
     messages,
     temperature: 0.88,
     maxRetries: 1,
   });
 
-  const reply = text.trim();
+  let reply = text.trim();
   if (!reply) {
     throw new Error(`Empty funnel reply for stage: ${stage}`);
+  }
+
+  if (stage === "reading" && INVALID_FREE_READING.test(reply)) {
+    const { text: retryText } = await generateText({
+      model: languageModel,
+      system: `${systemPrompt}
+
+REWRITE REQUIRED: The draft broke the free-reading flow. State 3-4 likely real-life problems based on age/life stage. Make statements only. No question, no "बताइए", no astrology terms, no remedy, no payment, and no promise to inspect later.`,
+      messages,
+      temperature: 0.9,
+      maxRetries: 1,
+    });
+    const retried = retryText.trim();
+    reply =
+      retried && !INVALID_FREE_READING.test(retried)
+        ? retried
+        : freeReadingFallback(birthProfile);
   }
 
   return normalizeReplyNumerals(reply);

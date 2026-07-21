@@ -6,7 +6,7 @@ import { FaWhatsapp } from "react-icons/fa6";
 import { useLanguage } from "../i18n/LanguageProvider";
 import LanguageToggle from "./LanguageToggle";
 
-const WHATSAPP_URL = "https://wa.me/919876543210";
+const WHATSAPP_URL = "https://wa.me/918815478644";
 
 const navHrefs = [
   { key: "howItWorks" as const, href: "#how-it-works" },

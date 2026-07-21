@@ -1,46 +1,4 @@
-import { DATE_PATTERN } from "./detect-birth-details";
-
-const EN_MONTHS: Record<string, number> = {
-  jan: 0,
-  january: 0,
-  feb: 1,
-  february: 1,
-  mar: 2,
-  march: 2,
-  apr: 3,
-  april: 3,
-  may: 4,
-  jun: 5,
-  june: 5,
-  jul: 6,
-  july: 6,
-  aug: 7,
-  august: 7,
-  sep: 8,
-  sept: 8,
-  september: 8,
-  oct: 9,
-  october: 9,
-  nov: 10,
-  november: 10,
-  dec: 11,
-  december: 11,
-};
-
-const HI_MONTHS: Record<string, number> = {
-  जनवरी: 0,
-  फरवरी: 1,
-  मार्च: 2,
-  अप्रैल: 3,
-  मई: 4,
-  जून: 5,
-  जुलाई: 6,
-  अगस्त: 7,
-  सितंबर: 8,
-  अक्टूबर: 9,
-  नवंबर: 10,
-  दिसंबर: 11,
-};
+import { parseBirthDateFromText } from "./detect-birth-details";
 
 export type BirthProfile = {
   dobLabel?: string;
@@ -48,47 +6,6 @@ export type BirthProfile = {
   lifeStageLabel: string;
   readingHint: string;
 };
-
-function parseSlashDate(
-  day: number,
-  month: number,
-  yearRaw: number,
-): Date | null {
-  const year = yearRaw < 100 ? 2000 + yearRaw : yearRaw;
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  const date = new Date(year, month - 1, day);
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1) return null;
-  return date;
-}
-
-function parseBirthDateFromText(text: string): Date | null {
-  const slash = text.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
-  if (slash) {
-    return parseSlashDate(
-      Number(slash[1]),
-      Number(slash[2]),
-      Number(slash[3]),
-    );
-  }
-
-  const named = text.match(
-    /(\d{1,2})\s+([a-zA-Z\u0900-\u097F]+)\s+(\d{4})/i,
-  );
-  if (named) {
-    const day = Number(named[1]);
-    const token = named[2].toLowerCase();
-    const year = Number(named[3]);
-    const month =
-      EN_MONTHS[token] ??
-      EN_MONTHS[token.slice(0, 3)] ??
-      HI_MONTHS[named[2]];
-    if (month !== undefined) {
-      return parseSlashDate(day, month + 1, year);
-    }
-  }
-
-  return null;
-}
 
 export function extractBirthDateFromHistory(
   messages: { role: string; content: string }[],
@@ -101,13 +18,6 @@ export function extractBirthDateFromHistory(
     if (text.startsWith("[फोटो")) continue;
     const date = parseBirthDateFromText(text);
     if (date) return date;
-  }
-
-  for (const text of userTexts) {
-    if (DATE_PATTERN.test(text)) {
-      const date = parseBirthDateFromText(text);
-      if (date) return date;
-    }
   }
 
   return null;

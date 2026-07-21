@@ -41,3 +41,12 @@ export function userIsQuestioningPaymentLink(text: string): boolean {
     text,
   );
 }
+
+export function isShortRefusal(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized || normalized.length > 80) return false;
+
+  return /^(?:nahi|nhi|nahin|no|नहीं|नही)(?:\s|$)|नहीं\s*(?:चाहिए|करनी|करना|होगा|है)|नही\s*(?:चाहिए|करनी|करना|होगा|है)|मत\s*(?:करो|भेजो)|मन\s*नहीं|mann?\s*nahi|don't\s*want/i.test(
+    normalized,
+  );
+}

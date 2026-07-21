@@ -19,7 +19,7 @@ import { getPublicConsultationPricing } from "@/lib/config/consultation-pricing"
 import { useLanguage } from "../i18n/LanguageProvider";
 import Header from "./Header";
 
-const WHATSAPP_URL = "https://wa.me/919876543210";
+const WHATSAPP_URL = "https://wa.me/918815478644";
 
 const featureIcons: IconType[] = [
   FaWhatsapp,

@@ -9,6 +9,7 @@ import { NO_PLANETS_BEFORE_PAYMENT, PANDIT_VOICE } from "./pandit-voice";
 import { isPaymentIntent } from "@/lib/payments/payment-intent";
 import {
   containsPaymentUrl,
+  isShortRefusal,
   isSimpleGreeting,
   redactPaymentUrlsInHistory,
   stripPaymentUrls,
@@ -245,6 +246,23 @@ export async function generatePaymentReply(
   const history = isDbConfigured()
     ? await getConversationHistory(input.phone)
     : [];
+
+  if (
+    input.type !== "success" &&
+    input.type !== "claimed_paid_pending" &&
+    isShortRefusal(input.userMessage)
+  ) {
+    const alreadyClosed = history
+      .filter((entry) => entry.role === "assistant")
+      .slice(-2)
+      .some((entry) =>
+        /कोई बात नहीं|बात यहीं रोक|जब मन हो|जब जरूरत लगे/.test(entry.content),
+      );
+
+    return alreadyClosed
+      ? "ठीक है।"
+      : "ठीक है, कोई बात नहीं। अभी बात यहीं रोकते हैं। जब कभी मन हो या जरूरत लगे, लिख दीजिएगा।";
+  }
 
   const isGreeting = isSimpleGreeting(input.userMessage);
   const includePaymentLink = shouldIncludePaymentLink(
