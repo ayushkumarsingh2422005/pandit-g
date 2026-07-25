@@ -36,6 +36,8 @@ export type PaymentListItem = {
   shortUrl: string;
   amountInr: number;
   status: string;
+  channel?: string;
+  referenceId?: string;
   contactName?: string;
   razorpayPaymentId?: string;
   createdAt: string;
@@ -203,6 +205,8 @@ export async function listPayments(limit = 100): Promise<PaymentListItem[]> {
       shortUrl: record.shortUrl,
       amountInr: record.amountPaise / 100,
       status: record.status,
+      channel: record.channel ?? "payment_link",
+      referenceId: record.referenceId,
       contactName: record.contactName,
       razorpayPaymentId: record.razorpayPaymentId,
       createdAt: new Date(record.createdAt).toISOString(),

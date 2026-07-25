@@ -8,7 +8,7 @@ import type { WhatsAppWebhookPayload } from "./types";
 
 export async function processWhatsAppWebhook(payload: WhatsAppWebhookPayload) {
   const statuses = parseStatusUpdates(payload);
-  handleStatusUpdates(statuses);
+  await handleStatusUpdates(statuses);
 
   const messages = parseIncomingAiMessages(payload);
 

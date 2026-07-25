@@ -10,9 +10,24 @@ type PaymentRow = {
   shortUrl: string;
   amountInr: number;
   status: string;
+  channel?: string;
+  referenceId?: string;
   paidAt?: string;
   razorpayPaymentId?: string;
 };
+
+function paymentLabel(row: PaymentRow): string {
+  if (row.channel === "whatsapp_pay" || row.shortUrl.startsWith("whatsapp:pay:")) {
+    return row.referenceId ?? row.paymentLinkId;
+  }
+  return "Open link";
+}
+
+function isNativePay(row: PaymentRow): boolean {
+  return (
+    row.channel === "whatsapp_pay" || row.shortUrl.startsWith("whatsapp:pay:")
+  );
+}
 
 type Stats = { total: number; paidCount: number; totalInr: number };
 
@@ -52,7 +67,7 @@ export function PaymentsPanel() {
         <div className="min-w-0">
           <h1 className="text-base text-[#e9edef] md:text-lg">Payments</h1>
           <p className="text-xs text-[#8696a0] md:text-sm">
-            Razorpay links & revenue
+            WhatsApp Pay & Razorpay
           </p>
         </div>
       </header>
@@ -135,14 +150,20 @@ export function PaymentsPanel() {
                   </div>
                   <div className="mt-2 flex items-center justify-between text-sm">
                     <span className="text-[#e9edef]">₹{row.amountInr}</span>
-                    <a
-                      href={row.shortUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-xs text-[#00a884]"
-                    >
-                      Open link
-                    </a>
+                    {isNativePay(row) ? (
+                      <span className="max-w-[50%] truncate font-mono text-[11px] text-[#8696a0]">
+                        WA · {paymentLabel(row)}
+                      </span>
+                    ) : (
+                      <a
+                        href={row.shortUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-[#00a884]"
+                      >
+                        Open link
+                      </a>
+                    )}
                   </div>
                   {row.paidAt ? (
                     <p className="mt-1 text-[11px] text-[#8696a0]">
@@ -162,7 +183,8 @@ export function PaymentsPanel() {
                     <th className="px-4 py-3">Amount</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">Paid at</th>
-                    <th className="px-4 py-3">Link</th>
+                    <th className="px-4 py-3">Channel</th>
+                    <th className="px-4 py-3">Link / Ref</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -198,15 +220,24 @@ export function PaymentsPanel() {
                           ? new Date(row.paidAt).toLocaleString("en-IN")
                           : "—"}
                       </td>
+                      <td className="px-4 py-3 text-xs text-[#8696a0]">
+                        {isNativePay(row) ? "WhatsApp Pay" : "Payment link"}
+                      </td>
                       <td className="px-4 py-3">
-                        <a
-                          href={row.shortUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-xs text-[#8696a0] hover:text-[#00a884]"
-                        >
-                          Open
-                        </a>
+                        {isNativePay(row) ? (
+                          <span className="font-mono text-xs text-[#8696a0]">
+                            {paymentLabel(row)}
+                          </span>
+                        ) : (
+                          <a
+                            href={row.shortUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-xs text-[#8696a0] hover:text-[#00a884]"
+                          >
+                            Open
+                          </a>
+                        )}
                       </td>
                     </tr>
                   ))}

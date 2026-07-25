@@ -2,7 +2,9 @@ import {
   generateErrorReply,
   generateFunnelReply,
 } from "@/lib/ai/generate-funnel-reply";
-import { generatePaymentReply } from "@/lib/ai/generate-payment-reply";
+import {
+  generatePaymentReplyDetailed,
+} from "@/lib/ai/generate-payment-reply";
 import type { PaymentReplyType } from "@/lib/ai/generate-payment-reply";
 import { generatePanditGReply } from "@/lib/ai/generate-reply";
 import { saveConversationTurn, getConversationHistory } from "@/lib/db/conversations";
@@ -20,6 +22,7 @@ import {
 import { getFunnelReadingDelayMs, sleep } from "@/lib/funnel/config";
 import { resolveFunnelStage } from "@/lib/funnel/state";
 import { getConsultationAccess } from "@/lib/payments/consultation-access";
+import { sendConsultationPayNow } from "@/lib/payments/create-whatsapp-payment";
 import {
   isPaymentIntent,
   userClaimsTheyPaid,
@@ -28,6 +31,10 @@ import { getConsultationPricing } from "@/lib/config/consultation-pricing";
 import { getOrCreateConsultationPaymentLink } from "@/lib/razorpay/create-payment-link";
 import { isRazorpayConfigured } from "@/lib/razorpay/is-configured";
 import { handleConversationModeration } from "@/lib/moderation/handle-moderation";
+import {
+  isPaymentLinkFallbackEnabled,
+  isWhatsAppPaymentsEnabled,
+} from "../payments-config";
 import { sendHumanTextMessage } from "../human-typing";
 import type { IncomingAiMessage } from "../types";
 
@@ -71,12 +78,24 @@ function requiresPaidSession(stage: string): boolean {
   return stage === "reading_delivered" || stage === "active";
 }
 
+function useNativePay(): boolean {
+  return isWhatsAppPaymentsEnabled();
+}
+
+function usePaymentLink(): boolean {
+  if (useNativePay()) return isPaymentLinkFallbackEnabled();
+  return isRazorpayConfigured();
+}
+
 async function resolvePaymentUrl(
   phone: string,
   contactName: string | undefined,
   existingUrl?: string,
 ): Promise<string | undefined> {
-  if (existingUrl) return existingUrl;
+  if (!usePaymentLink()) return undefined;
+  if (existingUrl && !existingUrl.startsWith("whatsapp:pay:")) {
+    return existingUrl;
+  }
   if (!isRazorpayConfigured()) return undefined;
 
   try {
@@ -85,6 +104,22 @@ async function resolvePaymentUrl(
   } catch (error) {
     console.error("[payment link]", error);
     return undefined;
+  }
+}
+
+async function sendNativePayNowSafe(
+  phone: string,
+  contactName: string | undefined,
+  bodyText: string,
+) {
+  try {
+    await sendConsultationPayNow({
+      phone,
+      contactName,
+      bodyText: bodyText.slice(0, 1024),
+    });
+  } catch (error) {
+    console.error("[whatsapp pay now]", error);
   }
 }
 
@@ -109,11 +144,14 @@ async function handlePaidConsultationGate(
   }
 
   const pricing = getConsultationPricing();
-  const paymentUrl = await resolvePaymentUrl(
-    message.from,
-    message.contactName,
-    access.pendingPaymentUrl,
-  );
+  const native = useNativePay();
+  const paymentUrl = native
+    ? undefined
+    : await resolvePaymentUrl(
+        message.from,
+        message.contactName,
+        access.pendingPaymentUrl,
+      );
 
   let replyType: PaymentReplyType;
   if (userClaimsTheyPaid(message.text)) {
@@ -127,12 +165,13 @@ async function handlePaidConsultationGate(
   }
 
   const startedAt = Date.now();
-  const reply = await generatePaymentReply({
+  const { text: reply, offerPayment } = await generatePaymentReplyDetailed({
     type: replyType,
     phone: message.from,
     userMessage: message.text,
     contactName: message.contactName,
     paymentUrl,
+    paymentMode: native ? "native" : "link",
     amountInr: pricing.priceInrFormatted,
     sessionMinutes: pricing.sessionMinutes,
   });
@@ -145,34 +184,52 @@ async function handlePaidConsultationGate(
     "active",
   );
   await replyAsHuman(message, reply, startedAt);
+
+  if (offerPayment && native) {
+    await sendNativePayNowSafe(
+      message.from,
+      message.contactName,
+      "नीचे Pay Now दबाकर दक्षिणा पूर्ण करें।",
+    );
+  }
 }
 
 async function sendPaymentOfferAfterReading(message: IncomingAiMessage) {
   const pricing = getConsultationPricing();
-  const paymentUrl = await resolvePaymentUrl(
-    message.from,
-    message.contactName,
-  );
+  const native = useNativePay();
+  const paymentUrl = native
+    ? undefined
+    : await resolvePaymentUrl(message.from, message.contactName);
 
-  const paymentOffer = await generatePaymentReply({
-    type: "offer",
-    phone: message.from,
-    userMessage: "गहन परामर्श के लिए भुगतान",
-    contactName: message.contactName,
-    paymentUrl,
-    amountInr: pricing.priceInrFormatted,
-    sessionMinutes: pricing.sessionMinutes,
-  });
+  const { text: paymentOffer, offerPayment } =
+    await generatePaymentReplyDetailed({
+      type: "offer",
+      phone: message.from,
+      userMessage: "गहन परामर्श के लिए भुगतान",
+      contactName: message.contactName,
+      paymentUrl,
+      paymentMode: native ? "native" : "link",
+      amountInr: pricing.priceInrFormatted,
+      sessionMinutes: pricing.sessionMinutes,
+    });
 
   await saveConversationTurn(
     message.from,
-    "[भुगतान लिंक भेजा]",
+    native ? "[Pay Now भेजा]" : "[भुगतान लिंक भेजा]",
     paymentOffer,
     message.contactName,
     "reading_delivered",
   );
 
   await replyAsHuman(message, paymentOffer);
+
+  if (offerPayment && native) {
+    await sendNativePayNowSafe(
+      message.from,
+      message.contactName,
+      "नीचे Pay Now दबाकर दक्षिणा पूर्ण करें।",
+    );
+  }
 }
 
 /** Funnel + AI handler. Read receipt + typing are sent earlier in the webhook route. */

@@ -48,6 +48,25 @@ export type WhatsAppStatusUpdate = {
   status: string;
   timestamp: string;
   recipient_id: string;
+  /** Present on Native WhatsApp Pay status updates. */
+  type?: string;
+  payment?: {
+    reference_id?: string;
+    currency?: string;
+    amount?: { value?: number; offset?: number };
+    transaction?: {
+      id?: string;
+      pg_transaction_id?: string;
+      type?: string;
+      status?: string;
+      created_timestamp?: number;
+      updated_timestamp?: number;
+      method?: { type?: string };
+      error?: { code?: string; reason?: string };
+    };
+    receipt?: string;
+    notes?: Record<string, string>;
+  };
 };
 
 export type IncomingTextMessage = {

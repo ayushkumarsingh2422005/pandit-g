@@ -37,7 +37,7 @@ export function isSimpleGreeting(text: string): boolean {
 }
 
 export function userIsQuestioningPaymentLink(text: string): boolean {
-  return /link\s*kyu|kyu\s*link|क्यों.*लिंक|लिंक\s*क्यों|ye\s*kya\s*bhej|ये\s*क्या\s*भेज|kya\s*bhej|गलती|mat\s*bhej|मत\s*भेज|again.*link|फिर.*लिंक|to\s*link\s*kyu|लिंक\s*क्यूँ/i.test(
+  return /link\s*kyu|kyu\s*link|क्यों.*लिंक|लिंक\s*क्यों|ye\s*kya\s*bhej|ये\s*क्या\s*भेज|kya\s*bhej|गलती|mat\s*bhej|मत\s*भेज|again.*link|फिर.*लिंक|to\s*link\s*kyu|लिंक\s*क्यूँ|pay\s*now\s*kyu|क्यों.*pay\s*now|बटन\s*क्यों/i.test(
     text,
   );
 }
