@@ -43,12 +43,14 @@ async function replyAsHuman(
   message: IncomingAiMessage,
   body: string,
   generationStartedAt?: number,
+  options?: { waitUntilSent?: boolean },
 ) {
   await sendHumanTextMessage({
     to: message.from,
     body,
     replyToMessageId: message.messageId,
     generationStartedAt,
+    waitUntilSent: options?.waitUntilSent,
   });
 }
 
@@ -183,13 +185,15 @@ async function handlePaidConsultationGate(
     message.contactName,
     "active",
   );
-  await replyAsHuman(message, reply, startedAt);
+  await replyAsHuman(message, reply, startedAt, {
+    waitUntilSent: offerPayment && native,
+  });
 
   if (offerPayment && native) {
     await sendNativePayNowSafe(
       message.from,
       message.contactName,
-      "नीचे Pay Now दबाकर दक्षिणा पूर्ण करें।",
+      "नीचे Review and pay दबाकर दक्षिणा पूर्ण करें।",
     );
   }
 }
@@ -197,39 +201,54 @@ async function handlePaidConsultationGate(
 async function sendPaymentOfferAfterReading(message: IncomingAiMessage) {
   const pricing = getConsultationPricing();
   const native = useNativePay();
-  const paymentUrl = native
-    ? undefined
-    : await resolvePaymentUrl(message.from, message.contactName);
 
-  const { text: paymentOffer, offerPayment } =
-    await generatePaymentReplyDetailed({
-      type: "offer",
-      phone: message.from,
-      userMessage: "गहन परामर्श के लिए भुगतान",
-      contactName: message.contactName,
-      paymentUrl,
-      paymentMode: native ? "native" : "link",
-      amountInr: pricing.priceInrFormatted,
-      sessionMinutes: pricing.sessionMinutes,
-    });
+  // Native: only the interactive invoice (CTA lives in order body). No 3rd text.
+  if (native) {
+    const bodyText =
+      `गहन परामर्श के लिए ${pricing.priceInrFormatted} — ${pricing.sessionMinutes} मिनट WhatsApp बातचीत। ` +
+      `नीचे Review and pay दबाकर दक्षिणा पूर्ण करें।`;
+
+    await saveConversationTurn(
+      message.from,
+      "[Pay Now भेजा]",
+      bodyText,
+      message.contactName,
+      "reading_delivered",
+    );
+
+    await sendNativePayNowSafe(
+      message.from,
+      message.contactName,
+      bodyText,
+    );
+    return;
+  }
+
+  const paymentUrl = await resolvePaymentUrl(
+    message.from,
+    message.contactName,
+  );
+
+  const { text: paymentOffer } = await generatePaymentReplyDetailed({
+    type: "offer",
+    phone: message.from,
+    userMessage: "गहन परामर्श के लिए भुगतान",
+    contactName: message.contactName,
+    paymentUrl,
+    paymentMode: "link",
+    amountInr: pricing.priceInrFormatted,
+    sessionMinutes: pricing.sessionMinutes,
+  });
 
   await saveConversationTurn(
     message.from,
-    native ? "[Pay Now भेजा]" : "[भुगतान लिंक भेजा]",
+    "[भुगतान लिंक भेजा]",
     paymentOffer,
     message.contactName,
     "reading_delivered",
   );
 
   await replyAsHuman(message, paymentOffer);
-
-  if (offerPayment && native) {
-    await sendNativePayNowSafe(
-      message.from,
-      message.contactName,
-      "नीचे Pay Now दबाकर दक्षिणा पूर्ण करें।",
-    );
-  }
 }
 
 /** Funnel + AI handler. Read receipt + typing are sent earlier in the webhook route. */
@@ -369,7 +388,8 @@ export async function handleAiMessage(message: IncomingAiMessage) {
         message.contactName,
         "reading_delivered",
       );
-      await replyAsHuman(message, reading, startedAt);
+      // Must fully deliver reading before Pay Now — delayed-send would race.
+      await replyAsHuman(message, reading, startedAt, { waitUntilSent: true });
       await sendPaymentOfferAfterReading(message);
       return;
     }

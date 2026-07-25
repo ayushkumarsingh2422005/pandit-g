@@ -126,12 +126,16 @@ async function waitInline(input: {
 /**
  * Wait (character-based), then send.
  * Prefer separate delayed-send route on Vercel so Hobby 10s is not blown by sleep.
+ *
+ * When `waitUntilSent` is true, always sleep+send in this invocation so a
+ * follow-up message (e.g. Pay Now) cannot overtake a scheduled delayed send.
  */
 export async function sendHumanTextMessage(input: {
   to: string;
   body: string;
   replyToMessageId?: string;
   generationStartedAt?: number;
+  waitUntilSent?: boolean;
 }) {
   const alreadyElapsedMs = input.generationStartedAt
     ? Date.now() - input.generationStartedAt
@@ -139,7 +143,7 @@ export async function sendHumanTextMessage(input: {
 
   const delayMs = getHumanTypingDelayMs(input.body, alreadyElapsedMs);
 
-  if (delayMs > 400) {
+  if (!input.waitUntilSent && delayMs > 400) {
     const scheduled = await scheduleDelayedSend({
       to: input.to,
       body: input.body,
