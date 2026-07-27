@@ -1,25 +1,22 @@
 import {
   generateErrorReply,
-  generateFunnelReply,
 } from "@/lib/ai/generate-funnel-reply";
 import {
   generatePaymentReplyDetailed,
 } from "@/lib/ai/generate-payment-reply";
 import type { PaymentReplyType } from "@/lib/ai/generate-payment-reply";
 import { generatePanditGReply } from "@/lib/ai/generate-reply";
-import { saveConversationTurn, getConversationHistory } from "@/lib/db/conversations";
+import {
+  getConversationHistory,
+  getConversationIntakeState,
+  saveConversationTurn,
+} from "@/lib/db/conversations";
 import { isDbConfigured } from "@/lib/db/is-configured";
 import {
-  hasCompleteBirthDetailsInHistory,
-  missingBirthFields,
-  userProvidedDetails,
-} from "@/lib/funnel/detect-birth-details";
-import {
-  extractBirthDetailsUniversally,
-  universalBirthContext,
-  universalMissingFields,
-} from "@/lib/funnel/extract-birth-details-ai";
-import { getFunnelReadingDelayMs, sleep } from "@/lib/funnel/config";
+  advanceScriptedIntake,
+  persistIntakeReply,
+  startScriptedIntake,
+} from "@/lib/funnel/intake-handler";
 import { resolveFunnelStage } from "@/lib/funnel/state";
 import { getConsultationAccess } from "@/lib/payments/consultation-access";
 import { sendConsultationPayNow } from "@/lib/payments/create-whatsapp-payment";
@@ -58,22 +55,6 @@ function buildStoredUserMessage(text: string, hasImage: boolean): string {
   const trimmed = text.trim();
   if (hasImage) return trimmed ? `[फोटो] ${trimmed}` : "[फोटो भेजी]";
   return trimmed || "[संदेश]";
-}
-
-async function persistTurn(
-  phone: string,
-  userMessage: string,
-  reply: string,
-  contactName: string | undefined,
-  funnelStage: "awaiting_details" | "reading_delivered" | "active",
-) {
-  await saveConversationTurn(
-    phone,
-    userMessage,
-    reply,
-    contactName,
-    funnelStage,
-  );
 }
 
 function requiresPaidSession(stage: string): boolean {
@@ -178,7 +159,7 @@ async function handlePaidConsultationGate(
     sessionMinutes: pricing.sessionMinutes,
   });
 
-  await persistTurn(
+  await saveConversationTurn(
     message.from,
     storedUserMessage,
     reply,
@@ -198,11 +179,10 @@ async function handlePaidConsultationGate(
   }
 }
 
-async function sendPaymentOfferAfterReading(message: IncomingAiMessage) {
+async function sendPaymentOfferAfterIntake(message: IncomingAiMessage) {
   const pricing = getConsultationPricing();
   const native = useNativePay();
 
-  // Native: only the interactive invoice (CTA lives in order body). No 3rd text.
   if (native) {
     const bodyText =
       `गहन परामर्श के लिए ${pricing.priceInrFormatted} — ${pricing.sessionMinutes} मिनट WhatsApp बातचीत। ` +
@@ -214,6 +194,7 @@ async function sendPaymentOfferAfterReading(message: IncomingAiMessage) {
       bodyText,
       message.contactName,
       "reading_delivered",
+      { funnelStage: "reading_delivered", intakeStep: null },
     );
 
     await sendNativePayNowSafe(
@@ -246,151 +227,112 @@ async function sendPaymentOfferAfterReading(message: IncomingAiMessage) {
     paymentOffer,
     message.contactName,
     "reading_delivered",
+    { funnelStage: "reading_delivered", intakeStep: null },
   );
 
   await replyAsHuman(message, paymentOffer);
 }
 
-/** Funnel + AI handler. Read receipt + typing are sent earlier in the webhook route. */
-export async function handleAiMessage(message: IncomingAiMessage) {
-  const hasImage = Boolean(message.imageMediaId);
-  // Palm / photo reading removed — we never download media for hastrekha.
-  const storedUserMessage = buildStoredUserMessage(message.text, hasImage);
+async function handleScriptedIntake(
+  message: IncomingAiMessage,
+  storedUserMessage: string,
+  hasImage: boolean,
+) {
   const history = isDbConfigured()
     ? await getConversationHistory(message.from)
     : [];
-  const stage = await resolveFunnelStage(message.from);
-  let detailsInMessage = userProvidedDetails(message.text, hasImage);
-  let detailsComplete = hasCompleteBirthDetailsInHistory(
-    history,
-    message.text,
-    hasImage,
-  );
-  let resolvedMissingBirthFields = missingBirthFields(
-    history,
-    message.text,
-    hasImage,
-  );
-  let resolvedBirthContext: string | undefined;
+  const intake = isDbConfigured()
+    ? await getConversationIntakeState(message.from)
+    : {
+        intakeStep: null,
+        intakeProfile: {},
+        clientName: undefined,
+        funnelStage: null,
+      };
 
-  // Regex handles common input quickly. Semantic extraction handles arbitrary
-  // formats, fragmented messages, misspellings, reordered and unlabeled data.
-  if (stage === "awaiting_details" && !hasImage) {
-    try {
-      const universal = await extractBirthDetailsUniversally(
-        history,
-        message.text,
-      );
-      if (universal) {
-        resolvedMissingBirthFields = universalMissingFields(universal);
-        resolvedBirthContext = universalBirthContext(universal);
-        detailsComplete = resolvedMissingBirthFields.length === 0;
-        detailsInMessage ||=
-          Boolean(universal.date) ||
-          Boolean(universal.time) ||
-          Boolean(universal.place);
-      }
-    } catch (error) {
-      // xAI extraction outage must not break onboarding; deterministic parser remains.
-      console.warn("[birth details extraction]", error);
-    }
+  const stage = await resolveFunnelStage(message.from);
+  const startedAt = Date.now();
+
+  // First contact — fixed welcome (ask name). Ignore first message content.
+  if (stage === "initial") {
+    const start = startScriptedIntake();
+    if (start.kind !== "reply") return;
+
+    await persistIntakeReply({
+      phone: message.from,
+      userMessage: storedUserMessage,
+      reply: start.reply,
+      contactName: message.contactName,
+      result: start,
+    });
+    await replyAsHuman(message, start.reply, startedAt);
+    return;
   }
+
+  // Legacy awaiting_details without intakeStep → collect name next
+  const step = intake.intakeStep ?? "awaiting_name";
+
+  const result = await advanceScriptedIntake({
+    step,
+    profile: intake.intakeProfile,
+    userText: message.text,
+    hasImage,
+    history,
+  });
+
+  if (result.kind === "ready_for_payment") {
+    await saveConversationTurn(
+      message.from,
+      storedUserMessage,
+      result.reply,
+      message.contactName,
+      "reading_delivered",
+      {
+        funnelStage: "reading_delivered",
+        intakeStep: null,
+        intakeProfile: result.intakeProfile,
+        clientName: result.clientName,
+      },
+    );
+    await replyAsHuman(message, result.reply, startedAt, {
+      waitUntilSent: true,
+    });
+    await sendPaymentOfferAfterIntake(message);
+    return;
+  }
+
+  await persistIntakeReply({
+    phone: message.from,
+    userMessage: storedUserMessage,
+    reply: result.reply,
+    contactName: message.contactName,
+    result,
+  });
+  await replyAsHuman(message, result.reply, startedAt);
+}
+
+/** Funnel + AI handler. Read receipt + typing are sent earlier in the webhook route. */
+export async function handleAiMessage(message: IncomingAiMessage) {
+  const hasImage = Boolean(message.imageMediaId);
+  const storedUserMessage = buildStoredUserMessage(message.text, hasImage);
+  const stage = await resolveFunnelStage(message.from);
+
+  const inScriptedIntake =
+    stage === "initial" || stage === "awaiting_details";
 
   const moderated = await handleConversationModeration({
     phone: message.from,
     text: message.text,
     hasMedia: hasImage,
     funnelStage: stage,
-    skipFlowViolationCheck: detailsInMessage || detailsComplete,
+    // Scripted intake answers (name, problem #, dates) must not trip flow checks
+    skipFlowViolationCheck: inScriptedIntake,
   });
   if (moderated) return;
 
   try {
-    // Photo alone never advances the funnel — ask for DOB / time / place.
-    if (hasImage && !detailsComplete && (stage === "initial" || stage === "awaiting_details")) {
-      const startedAt = Date.now();
-      const reply = await generateFunnelReply({
-        stage: stage === "initial" ? "welcome" : "ask_details",
-        phone: message.from,
-        userMessage:
-          message.text.trim() ||
-          "उपयोगकर्ता ने फोटो भेजी है। हस्तरेखा मत करो — जन्म तिथि, समय और स्थान माँगें।",
-        contactName: message.contactName,
-        missingBirthFields: resolvedMissingBirthFields,
-      });
-      await persistTurn(
-        message.from,
-        storedUserMessage,
-        reply,
-        message.contactName,
-        "awaiting_details",
-      );
-      await replyAsHuman(message, reply, startedAt);
-      return;
-    }
-
-    if (stage === "initial") {
-      const startedAt = Date.now();
-      const reply = await generateFunnelReply({
-        stage: "welcome",
-        phone: message.from,
-        userMessage: message.text,
-        contactName: message.contactName,
-      });
-      await persistTurn(
-        message.from,
-        storedUserMessage,
-        reply,
-        message.contactName,
-        "awaiting_details",
-      );
-      await replyAsHuman(message, reply, startedAt);
-      return;
-    }
-
-    if (stage === "awaiting_details" && !detailsComplete) {
-      const startedAt = Date.now();
-      const reply = await generateFunnelReply({
-        stage: "ask_details",
-        phone: message.from,
-        userMessage: message.text,
-        contactName: message.contactName,
-        missingBirthFields: resolvedMissingBirthFields,
-      });
-      await persistTurn(
-        message.from,
-        storedUserMessage,
-        reply,
-        message.contactName,
-        "awaiting_details",
-      );
-      await replyAsHuman(message, reply, startedAt);
-      return;
-    }
-
-    if (stage === "awaiting_details" && detailsComplete) {
-      // Kundli "study" pause — then age-based reading (extra long feel).
-      await sleep(getFunnelReadingDelayMs());
-
-      const startedAt = Date.now();
-      const reading = await generateFunnelReply({
-        stage: "reading",
-        phone: message.from,
-        userMessage: message.text,
-        contactName: message.contactName,
-        birthDetailsContext: resolvedBirthContext,
-      });
-
-      await persistTurn(
-        message.from,
-        storedUserMessage,
-        reading,
-        message.contactName,
-        "reading_delivered",
-      );
-      // Must fully deliver reading before Pay Now — delayed-send would race.
-      await replyAsHuman(message, reading, startedAt, { waitUntilSent: true });
-      await sendPaymentOfferAfterReading(message);
+    if (stage === "initial" || stage === "awaiting_details") {
+      await handleScriptedIntake(message, storedUserMessage, hasImage);
       return;
     }
 

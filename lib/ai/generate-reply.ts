@@ -3,6 +3,7 @@ import type { ModelMessage, UserModelMessage } from "ai";
 import { generateText } from "ai";
 import {
   getConversationHistory,
+  getConversationIntakeState,
   saveConversationTurn,
   type FunnelStage,
 } from "@/lib/db/conversations";
@@ -73,12 +74,24 @@ export async function generatePanditGReply({
   const paidConsultationPhase = isPaidSession
     ? detectPaidConsultationPhase(history, userMessage)
     : undefined;
+  const intakeState = isPaidSession && isDbConfigured()
+    ? await getConversationIntakeState(phone)
+    : null;
+  const preferredName =
+    intakeState?.intakeProfile?.clientName ||
+    intakeState?.clientName ||
+    contactName;
+
   const paidSessionContext = isPaidSession
-    ? buildPaidSessionContextBlock(history, userMessage)
+    ? buildPaidSessionContextBlock(
+        history,
+        userMessage,
+        intakeState?.intakeProfile,
+      )
     : undefined;
 
   const systemPrompt = buildPanditGSystemPrompt({
-    contactName,
+    contactName: preferredName,
     isContinuingConversation,
     isPaidSession,
     paidConsultationPhase,

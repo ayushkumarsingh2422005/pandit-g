@@ -1,5 +1,9 @@
 import { buildBirthProfileFromHistory } from "@/lib/funnel/birth-profile";
 import type { StoredChatMessage } from "@/lib/db/conversations";
+import {
+  formatIntakeProfileForAi,
+  type IntakeProfile,
+} from "@/lib/funnel/intake-script";
 
 const CONCERN_PATTERN =
   /नौकरी|नौकर|शादी|विवाह|पैसा|धन|प्रेम|रिश्त|परिवार|स्वास्थ्य|पढ़ाई|करियर|व्यापार|धर्म|धार्मिक|religious|puja|पूजा|समस्या|problem|परेशान|दिक्कत|tension|शत्रु|dushman|job|marriage|money|career|business|health|family/i;
@@ -149,9 +153,18 @@ export function getConsultationProgress(
   }
 
   const freeReadingSnippet = findFreeReadingSnippet(history);
-  const freeReadingDone = Boolean(freeReadingSnippet);
+  const intakeCompleted = history.some(
+    (m) =>
+      m.role === "assistant" &&
+      (m.content.includes("व्यक्तिगत परामर्श में आपको मिलेगा") ||
+        m.content.includes("आपकी जानकारी सफलतापूर्वक प्राप्त")),
+  );
+  const freeReadingDone = Boolean(freeReadingSnippet) || intakeCompleted;
   const problemsFullyDescribed =
-    freeReadingDone || paidProblemReplyDone || discussedProblemPlain;
+    freeReadingDone ||
+    paidProblemReplyDone ||
+    discussedProblemPlain ||
+    intakeCompleted;
 
   const birthProfile = buildBirthProfileFromHistory(history);
 
@@ -174,9 +187,14 @@ export function getConsultationProgress(
 export function buildPaidSessionContextBlock(
   history: StoredChatMessage[],
   userMessage: string,
+  intakeProfile?: IntakeProfile,
 ): string {
   const progress = getConsultationProgress(history, userMessage);
   const birthProfile = buildBirthProfileFromHistory(history);
+  const intakeBlock = intakeProfile
+    ? formatIntakeProfileForAi(intakeProfile)
+    : "";
+  const hasIntakeProblem = Boolean(intakeProfile?.problem);
 
   const birthLine = birthProfile.dobLabel
     ? `${birthProfile.dobLabel} (लगभग ${birthProfile.ageYears} साल)`
@@ -185,25 +203,34 @@ export function buildPaidSessionContextBlock(
   const concernsLine =
     progress.statedConcerns.length > 0
       ? progress.statedConcerns.map((c, i) => `${i + 1}. "${c}"`).join("\n")
-      : "User ने अभी बात शुरू की — जो लिखा सुनो";
+      : hasIntakeProblem
+        ? `Intake में बताया: ${intakeProfile?.problem}`
+        : "User ने अभी बात शुरू की — जो लिखा सुनो";
+
+  const intakeLine = intakeBlock
+    ? `\nIntake (scripted):\n${intakeBlock}`
+    : "";
 
   const readingLine = progress.freeReadingSnippet
     ? `\nमुफ़्त पढ़ाव (पहले बताया): "${progress.freeReadingSnippet.slice(0, 280)}..."`
     : "";
 
+  const problemsKnown =
+    progress.freeReadingDone || hasIntakeProblem || progress.problemsFullyDescribed;
+
   return `
 ━━━ पूरी chat पढ़ चुके हो — याद रखो ━━━
 जन्म: ${birthLine}
 User की बातें:
-${concernsLine}${readingLine}
+${concernsLine}${intakeLine}${readingLine}
 
 Progress (एक समय पर एक चरण):
-- मुफ़्त पढ़ाव (समस्याएँ): ${progress.freeReadingDone ? "✓ हो चुका" : "—"}
-- भुगतान के बाद समस्या: ${progress.paidProblemReplyDone ? "✓" : progress.freeReadingDone ? "skip (पढ़ाव में हो चुका)" : "—"}
+- समस्या intake/पढ़ाव: ${problemsKnown ? "✓ हो चुका" : "—"}
+- भुगतान के बाद समस्या: ${progress.paidProblemReplyDone ? "✓" : problemsKnown ? "skip (पहले से ज्ञात)" : "—"}
 - कारण (ग्रह/दशा): ${progress.paidCauseReplyDone ? "✓" : "← अगला यही"}
 - उपाय: ${progress.paidRemedyReplyDone ? "✓" : progress.paidCauseReplyDone ? "← अगला यही" : "—"}
 
-पूरा flow: intro → जन्म विवरण → समस्याएँ (बिना ग्रह) → भुगतान → कारण (ग्रह) → उपाय → follow-up
+पूरा flow: scripted intake → भुगतान → कारण (ग्रह) → उपाय → follow-up
 
 सख्त मना — robotic loop:
 - "दो लाइन में लिखें/बताएं" — कभी नहीं
