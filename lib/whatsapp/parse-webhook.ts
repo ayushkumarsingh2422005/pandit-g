@@ -111,5 +111,22 @@ function parseMessage(
     };
   }
 
+  // List / reply-button taps — use id so intake parsers can map choices.
+  if (message.type === "interactive" && message.interactive) {
+    const list = message.interactive.list_reply;
+    const button = message.interactive.button_reply;
+    const id = list?.id?.trim() || button?.id?.trim();
+    const title = list?.title?.trim() || button?.title?.trim();
+    if (!id && !title) return null;
+
+    return {
+      from: message.from,
+      messageId: message.id,
+      // Prefer stable id (problem_2 / pkg_1); title as fallback for free-text parsers
+      text: id || title || "",
+      contactName,
+    };
+  }
+
   return null;
 }

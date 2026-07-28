@@ -17,6 +17,7 @@ import {
   persistIntakeReply,
   startScriptedIntake,
 } from "@/lib/funnel/intake-handler";
+import type { IntakeInteractive } from "@/lib/funnel/intake-script";
 import { resolveFunnelStage } from "@/lib/funnel/state";
 import { getConsultationAccess } from "@/lib/payments/consultation-access";
 import { sendConsultationPayNow } from "@/lib/payments/create-whatsapp-payment";
@@ -33,7 +34,12 @@ import {
   isWhatsAppPaymentsEnabled,
 } from "../payments-config";
 import { sendHumanTextMessage } from "../human-typing";
+import {
+  sendInteractiveButtonMessage,
+  sendInteractiveListMessage,
+} from "../interactive";
 import type { IncomingAiMessage } from "../types";
+import { sleep } from "@/lib/funnel/config";
 
 /** AI reply with character-based typing delay (human feel). */
 async function replyAsHuman(
@@ -49,6 +55,53 @@ async function replyAsHuman(
     generationStartedAt,
     waitUntilSent: options?.waitUntilSent,
   });
+}
+
+/** Send WhatsApp List / Reply Buttons (no delayed-send — must stay ordered). */
+async function replyWithInteractive(
+  message: IncomingAiMessage,
+  interactive: IntakeInteractive,
+  generationStartedAt?: number,
+) {
+  const elapsed = generationStartedAt
+    ? Date.now() - generationStartedAt
+    : 0;
+  const pause = Math.max(0, Math.min(1200, 800 - elapsed));
+  if (pause > 0) await sleep(pause);
+
+  if (interactive.type === "list") {
+    await sendInteractiveListMessage({
+      to: message.from,
+      body: interactive.body,
+      buttonText: interactive.buttonText,
+      sections: interactive.sections,
+      header: interactive.header,
+      footer: interactive.footer,
+    });
+    return;
+  }
+
+  await sendInteractiveButtonMessage({
+    to: message.from,
+    body: interactive.body,
+    buttons: interactive.buttons,
+    header: interactive.header,
+    footer: interactive.footer,
+  });
+}
+
+async function sendIntakeReply(
+  message: IncomingAiMessage,
+  reply: string,
+  interactive: IntakeInteractive | undefined,
+  generationStartedAt?: number,
+  options?: { waitUntilSent?: boolean },
+) {
+  if (interactive) {
+    await replyWithInteractive(message, interactive, generationStartedAt);
+    return;
+  }
+  await replyAsHuman(message, reply, generationStartedAt, options);
 }
 
 function buildStoredUserMessage(text: string, hasImage: boolean): string {
@@ -295,7 +348,7 @@ async function handleScriptedIntake(
   const stage = await resolveFunnelStage(message.from);
   const startedAt = Date.now();
 
-  // First contact — fixed welcome (ask name). Ignore first message content.
+  // First contact — interactive problem list
   if (stage === "initial") {
     const start = startScriptedIntake();
     if (start.kind !== "reply") return;
@@ -307,7 +360,12 @@ async function handleScriptedIntake(
       contactName: message.contactName,
       result: start,
     });
-    await replyAsHuman(message, start.reply, startedAt);
+    await sendIntakeReply(
+      message,
+      start.reply,
+      start.interactive,
+      startedAt,
+    );
     return;
   }
 
@@ -350,7 +408,12 @@ async function handleScriptedIntake(
     contactName: message.contactName,
     result,
   });
-  await replyAsHuman(message, result.reply, startedAt);
+  await sendIntakeReply(
+    message,
+    result.reply,
+    result.interactive,
+    startedAt,
+  );
 }
 
 /** Funnel + AI handler. Read receipt + typing are sent earlier in the webhook route. */

@@ -17,6 +17,7 @@ import {
   askPriorAttemptsMessage,
   askQuestionOnlyMessage,
   extractSpecialQuestion,
+  featuresAndPackageInteractive,
   featuresAndPackageMenuMessage,
   formatIntakeProfileForAi,
   isLikelyGreetingOnly,
@@ -24,8 +25,11 @@ import {
   parsePackageChoice,
   parseProblemChoice,
   paymentAckBeforePayNow,
+  reAskPackageInteractive,
   reAskPackageMessage,
+  welcomeInteractive,
   welcomeMessage,
+  type IntakeInteractive,
   type IntakeProfile,
   type IntakeStep,
   type ServicePackage,
@@ -39,6 +43,7 @@ export type IntakeHandlerResult =
       intakeStep: IntakeStep;
       intakeProfile: IntakeProfile;
       clientName?: string;
+      interactive?: IntakeInteractive;
     }
   | {
       kind: "ready_for_payment";
@@ -60,6 +65,7 @@ function replyResult(
   reply: string,
   intakeStep: IntakeStep,
   profile: IntakeProfile,
+  interactive?: IntakeInteractive,
 ): Extract<IntakeHandlerResult, { kind: "reply" }> {
   return {
     kind: "reply",
@@ -68,11 +74,12 @@ function replyResult(
     intakeStep,
     intakeProfile: profile,
     clientName: profile.clientName,
+    interactive,
   };
 }
 
 /**
- * Scripted intake (no LLM). Menu-driven until package selected → Pay Now.
+ * Scripted intake (no LLM). Interactive menus until package → Pay Now.
  */
 export async function advanceScriptedIntake(input: {
   step: IntakeStep | null;
@@ -87,11 +94,21 @@ export async function advanceScriptedIntake(input: {
 
   if (step === "awaiting_problem") {
     if (isLikelyGreetingOnly(text)) {
-      return replyResult(welcomeMessage(), "awaiting_problem", profile);
+      return replyResult(
+        welcomeMessage(),
+        "awaiting_problem",
+        profile,
+        welcomeInteractive(),
+      );
     }
     const problem = parseProblemChoice(text);
     if (!problem) {
-      return replyResult(welcomeMessage(), "awaiting_problem", profile);
+      return replyResult(
+        welcomeMessage(),
+        "awaiting_problem",
+        profile,
+        welcomeInteractive(),
+      );
     }
     profile.problem = problem.label;
     profile.problemCode = problem.code;
@@ -158,14 +175,12 @@ export async function advanceScriptedIntake(input: {
       );
     }
 
-    // Birth is complete — resolve main question from this turn or history.
     let question =
       extractSpecialQuestion(text) || profile.specialQuestion || undefined;
 
     const missingInThisTurn = missingBirthFields([], input.userText, false);
     const thisTurnLooksLikeBirth = missingInThisTurn.length < 3;
 
-    // Follow-up turn: user only sent the question after we asked for it.
     if (
       !question &&
       text.length >= 8 &&
@@ -188,16 +203,17 @@ export async function advanceScriptedIntake(input: {
       featuresAndPackageMenuMessage(),
       "awaiting_package_choice",
       profile,
+      featuresAndPackageInteractive(),
     );
   }
 
-  // awaiting_package_choice
   const pkg = parsePackageChoice(text);
   if (!pkg) {
     return replyResult(
       reAskPackageMessage(),
       "awaiting_package_choice",
       profile,
+      reAskPackageInteractive(),
     );
   }
 
@@ -224,6 +240,7 @@ export function startScriptedIntake(): Extract<
     funnelStage: "awaiting_details",
     intakeStep: "awaiting_problem",
     intakeProfile: {},
+    interactive: welcomeInteractive(),
   };
 }
 

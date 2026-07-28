@@ -82,23 +82,98 @@ export const SERVICE_PACKAGES: ServicePackage[] = [
 
 const DIVIDER = "━━━━━━━━━━━━━━━";
 
+/** WhatsApp interactive payload attached to an intake reply. */
+export type IntakeInteractive =
+  | {
+      type: "list";
+      body: string;
+      buttonText: string;
+      header?: string;
+      footer?: string;
+      sections: {
+        title?: string;
+        rows: { id: string; title: string; description?: string }[];
+      }[];
+    }
+  | {
+      type: "buttons";
+      body: string;
+      header?: string;
+      footer?: string;
+      buttons: { id: string; title: string }[];
+    };
+
+const PROBLEM_LIST_ROWS: {
+  id: string;
+  title: string;
+  description: string;
+}[] = [
+  { id: "problem_1", title: "विवाह में देरी", description: "💍 शादी / विवाह संबंधी" },
+  { id: "problem_2", title: "नौकरी / करियर", description: "💼 Job / career" },
+  {
+    id: "problem_3",
+    title: "व्यवसाय समस्या",
+    description: "📈 व्यापार / business",
+  },
+  {
+    id: "problem_4",
+    title: "आर्थिक / कर्ज",
+    description: "💰 पैसे / कर्ज की समस्या",
+  },
+  { id: "problem_5", title: "प्रेम संबंध", description: "❤️ Love / relationship" },
+  {
+    id: "problem_6",
+    title: "स्वास्थ्य चिंता",
+    description: "🏥 सेहत संबंधी",
+  },
+  {
+    id: "problem_7",
+    title: "पारिवारिक तनाव",
+    description: "🏡 घर / परिवार",
+  },
+  { id: "problem_8", title: "अन्य", description: "✍️ कोई और विषय" },
+];
+
+export function problemListInteractive(): IntakeInteractive {
+  return {
+    type: "list",
+    body: [
+      "🙏 नमस्ते बेटा। आपका स्वागत है।",
+      "",
+      "बताइए, किस विषय को लेकर मन परेशान है?",
+      "",
+      'नीचे "विकल्प देखें" दबाकर विषय चुनें।',
+    ].join("\n"),
+    buttonText: "विकल्प देखें",
+    footer: "Pandit G",
+    sections: [
+      {
+        title: "मुख्य समस्या",
+        rows: PROBLEM_LIST_ROWS,
+      },
+    ],
+  };
+}
+
+export function packageButtonsInteractive(body: string): IntakeInteractive {
+  return {
+    type: "buttons",
+    body,
+    footer: "सेवा दक्षिणा",
+    buttons: [
+      { id: "pkg_1", title: "WhatsApp ₹101" },
+      { id: "pkg_2", title: "WhatsApp ₹151" },
+      { id: "pkg_3", title: "फोन कॉल ₹201" },
+    ],
+  };
+}
+
 export function welcomeMessage(): string {
-  return [
-    "🙏 नमस्ते बेटा। आपका स्वागत है।",
-    "",
-    "बताइए, किस विषय को लेकर मन परेशान है?",
-    "",
-    "1️⃣ 💍 विवाह में देरी",
-    "2️⃣ 💼 नौकरी / करियर",
-    "3️⃣ 📈 व्यवसाय में समस्या",
-    "4️⃣ 💰 आर्थिक / कर्ज की समस्या",
-    "5️⃣ ❤️ प्रेम संबंध",
-    "6️⃣ 🏥 स्वास्थ्य संबंधी चिंता",
-    "7️⃣ 🏡 पारिवारिक तनाव",
-    "8️⃣ ✍️ अन्य",
-    "",
-    "📩 कृपया नंबर या समस्या लिखकर भेजें।",
-  ].join("\n");
+  return problemListInteractive().body;
+}
+
+export function welcomeInteractive(): IntakeInteractive {
+  return problemListInteractive();
 }
 
 export function askDurationMessage(): string {
@@ -159,7 +234,7 @@ export function askQuestionOnlyMessage(): string {
   ].join("\n");
 }
 
-/** Thanks + features + dakshina menu (one turn). */
+/** Thanks + features — package choice via reply buttons. */
 export function featuresAndPackageMenuMessage(): string {
   return [
     "धन्यवाद। जानकारी मिल गई।",
@@ -170,36 +245,35 @@ export function featuresAndPackageMenuMessage(): string {
     "",
     "इस परामर्श में आपको निम्नलिखित जानकारियाँ दी जाएँगी:",
     "",
-    "✅ आपकी जन्म कुंडली का विस्तार से अध्ययन",
-    "✅ आपके द्वारा पूछे गए सभी प्रश्नों के साफ़ और सरल लिखित उत्तर",
-    "✅ नौकरी और धन आगमन के सबसे सटीक समय की जानकारी",
-    "✅ स्थिति सुधारने के लिए आसान और अचूक वैदिक उपाय",
-    "✅ रिपोर्ट पढ़ने के बाद कोई शंका होने पर एक फॉलो-अप चैट सहायता",
+    "✅ जन्म कुंडली का विस्तार से अध्ययन",
+    "✅ आपके प्रश्नों के साफ़ लिखित उत्तर",
+    "✅ नौकरी / धन आगमन के सटीक समय की जानकारी",
+    "✅ आसान वैदिक उपाय",
+    "✅ एक फॉलो-अप चैट सहायता",
     "",
     DIVIDER,
     "",
-    "आपकी कुंडली का विस्तार से अध्ययन करने और मार्गदर्शन तैयार करने के लिए हमारी एक छोटी सी सेवा दक्षिणा रहती है।",
+    "सेवा दक्षिणा — नीचे बटन से विकल्प चुनें:",
     "",
-    "आप अपनी सुविधा अनुसार नीचे दिए गए विकल्पों में से चुनाव कर सकते हैं:",
-    "",
-    "🌿 1️⃣ WhatsApp परामर्श (लिखित रिपोर्ट व उपाय) — ₹101",
-    "🌿 2️⃣ WhatsApp परामर्श (लिखित रिपोर्ट व उपाय) — ₹151",
-    "📞 3️⃣ फोन कॉल परामर्श (15 मिनट सीधी चर्चा) — ₹201",
-    "",
-    "📩 कृपया केवल 1, 2 या 3 लिखकर भेजें।",
+    "🌿 WhatsApp परामर्श (लिखित रिपोर्ट व उपाय)",
+    "📞 फोन कॉल परामर्श (15 मिनट सीधी चर्चा)",
   ].join("\n");
+}
+
+export function featuresAndPackageInteractive(): IntakeInteractive {
+  return packageButtonsInteractive(featuresAndPackageMenuMessage());
 }
 
 export function reAskPackageMessage(): string {
   return [
-    "🙏 कृपया दक्षिणा का विकल्प चुनें:",
+    "🙏 कृपया दक्षिणा का विकल्प नीचे बटन से चुनें।",
     "",
-    "1️⃣ WhatsApp — ₹101",
-    "2️⃣ WhatsApp — ₹151",
-    "3️⃣ फोन कॉल — ₹201",
-    "",
-    "केवल नंबर लिखकर भेजें।",
+    "WhatsApp ₹101 · WhatsApp ₹151 · फोन कॉल ₹201",
   ].join("\n");
+}
+
+export function reAskPackageInteractive(): IntakeInteractive {
+  return packageButtonsInteractive(reAskPackageMessage());
 }
 
 export function paymentAckBeforePayNow(pkg: ServicePackage): string {
@@ -216,6 +290,13 @@ export function parseProblemChoice(text: string): {
 } | null {
   const raw = text.trim();
   if (!raw) return null;
+
+  // Interactive list tap: problem_1 … problem_8
+  const listId = raw.match(/^problem_([1-8])$/i);
+  if (listId) {
+    const opt = PROBLEM_OPTIONS.find((o) => o.code === listId[1]);
+    if (opt) return opt;
+  }
 
   const digitMatch = raw.match(
     /^[\s]*(?:option\s*)?([1-8१-८])(?:[\s).:\-_…]|$)/iu,
@@ -236,6 +317,12 @@ export function parseProblemChoice(text: string): {
     if (opt) return opt;
   }
 
+  // List row title tap fallback (title sent without id in rare cases)
+  const byTitle = PROBLEM_OPTIONS.find(
+    (o) => o.label === raw || raw.includes(o.label),
+  );
+  if (byTitle && raw.length <= 40) return byTitle;
+
   const byKeyword: { re: RegExp; code: string }[] = [
     { re: /विवाह|शादी|marriage|vivah|shaadi/i, code: "1" },
     { re: /नौकरी|करियर|job|career|naukri/i, code: "2" },
@@ -251,7 +338,6 @@ export function parseProblemChoice(text: string): {
     if (re.test(raw)) {
       const opt = PROBLEM_OPTIONS.find((o) => o.code === code);
       if (opt) {
-        // Prefer their wording when free-text is longer than the label
         if (raw.length > opt.label.length + 5) {
           return { code: opt.code, label: raw.slice(0, 120) };
         }
@@ -260,7 +346,7 @@ export function parseProblemChoice(text: string): {
     }
   }
 
-  if (raw.length >= 2 && raw.length <= 200) {
+  if (raw.length >= 2 && raw.length <= 200 && !/^problem_/i.test(raw)) {
     return { code: "8", label: raw.slice(0, 120) };
   }
 
@@ -271,6 +357,12 @@ export function parsePackageChoice(text: string): ServicePackage | null {
   const raw = text.trim();
   if (!raw) return null;
 
+  // Interactive button tap: pkg_1 … pkg_3
+  const btnId = raw.match(/^pkg_([1-3])$/i);
+  if (btnId) {
+    return SERVICE_PACKAGES.find((p) => p.code === btnId[1]) ?? null;
+  }
+
   const digitMatch = raw.match(
     /^[\s]*(?:option\s*)?([1-3१-३])(?:[\s).:\-_…]|$)/iu,
   );
@@ -280,18 +372,11 @@ export function parsePackageChoice(text: string): ServicePackage | null {
     return SERVICE_PACKAGES.find((p) => p.code === code) ?? null;
   }
 
-  // Amount hints
-  if (/101|१०१/.test(raw) && /whats?app|व्हाट्स|लिखित|रिपोर्ट/i.test(raw)) {
-    return SERVICE_PACKAGES[0];
-  }
-  if (/151|१५१/.test(raw) && /whats?app|व्हाट्स|लिखित|रिपोर्ट/i.test(raw)) {
-    return SERVICE_PACKAGES[1];
-  }
+  if (/101|१०१/.test(raw)) return SERVICE_PACKAGES[0];
+  if (/151|१५१/.test(raw)) return SERVICE_PACKAGES[1];
   if (/201|२०१/.test(raw) || /फोन|phone|कॉल|call/i.test(raw)) {
     return SERVICE_PACKAGES[2];
   }
-  if (/101|१०१/.test(raw)) return SERVICE_PACKAGES[0];
-  if (/151|१५१/.test(raw)) return SERVICE_PACKAGES[1];
 
   if (/whats?app|व्हाट्स|लिखित/i.test(raw) && !/151|१५१/.test(raw)) {
     return SERVICE_PACKAGES[0];
