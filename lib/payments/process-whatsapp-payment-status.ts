@@ -1,5 +1,9 @@
 import { getConsultationPricing } from "@/lib/config/consultation-pricing";
-import { markPaymentPaid } from "@/lib/db/payments";
+import {
+  findReusableWhatsAppPayment,
+  markPaymentPaid,
+  type PaymentRecord,
+} from "@/lib/db/payments";
 import { saveConversationTurn } from "@/lib/db/conversations";
 import { startConsultationSession } from "@/lib/db/sessions";
 import { sendHumanTextMessage } from "@/lib/whatsapp/human-typing";
@@ -9,66 +13,58 @@ import {
 } from "@/lib/whatsapp/send-order-details";
 import type { WhatsAppStatusUpdate } from "@/lib/whatsapp/types";
 
-function successMessage(): string {
+export function paymentSuccessMessage(): string {
   return `दक्षिणा प्राप्त हुई। अब जो भी दिल पर लगा हो वो लिखिए — सुनकर आगे बात करते हैं।`;
 }
 
-/**
- * Handle WhatsApp statuses of type "payment" (Native Pay Now).
- * Always confirms via Meta payment lookup before unlocking the session.
- */
-export async function processWhatsAppPaymentStatus(
-  statusUpdate: WhatsAppStatusUpdate,
-): Promise<void> {
-  if (statusUpdate.type !== "payment") return;
-
-  const referenceId = statusUpdate.payment?.reference_id?.trim();
-  if (!referenceId) {
-    console.warn("[whatsapp payment] Missing reference_id", statusUpdate.id);
-    return;
-  }
-
-  const webhookStatus = statusUpdate.status;
-  const phone = statusUpdate.recipient_id;
-  const eventId = statusUpdate.id || `wa_pay_${referenceId}_${webhookStatus}`;
-
-  console.info(
-    `[whatsapp payment] ${webhookStatus} | ref: ${referenceId} | to: ${phone}`,
+function isSuccessfulWebhook(statusUpdate: WhatsAppStatusUpdate): boolean {
+  const status = (statusUpdate.status || "").toLowerCase();
+  const txnStatus = (
+    statusUpdate.payment?.transaction?.status || ""
+  ).toLowerCase();
+  return (
+    status === "captured" ||
+    status === "paid" ||
+    status === "success" ||
+    txnStatus === "success"
   );
+}
 
-  if (webhookStatus !== "captured" && webhookStatus !== "pending") {
-    return;
-  }
+function isLookupPaid(lookup: {
+  status: string;
+  razorpayPaymentId?: string;
+}): boolean {
+  const status = (lookup.status || "").toLowerCase();
+  return (
+    status === "captured" ||
+    status === "paid" ||
+    status === "success" ||
+    Boolean(lookup.razorpayPaymentId)
+  );
+}
 
-  // Confirm with Meta lookup — never unlock on webhook alone
-  const lookup = await lookupWhatsAppPayment(referenceId);
-  if (!lookup) {
-    console.warn("[whatsapp payment] Lookup failed", referenceId);
-    return;
-  }
-
-  if (lookup.status !== "captured") {
-    console.info(
-      `[whatsapp payment] Lookup status=${lookup.status} — waiting`,
-      referenceId,
-    );
-    return;
-  }
-
+/**
+ * Mark paid → start session → order_status(captured) → success WhatsApp text.
+ * Shared by webhook + on-chat reconciliation.
+ */
+export async function fulfillWhatsAppConsultationPayment(input: {
+  referenceId: string;
+  phone: string;
+  razorpayPaymentId?: string;
+  razorpayOrderId?: string;
+  webhookEventId: string;
+  contactName?: string;
+}): Promise<PaymentRecord | null> {
   const paid = await markPaymentPaid({
-    referenceId,
-    razorpayPaymentId:
-      lookup.razorpayPaymentId ??
-      statusUpdate.payment?.transaction?.pg_transaction_id,
-    razorpayOrderId:
-      lookup.razorpayOrderId ?? statusUpdate.payment?.transaction?.id,
-    phone,
-    webhookEventId: eventId,
+    referenceId: input.referenceId,
+    razorpayPaymentId: input.razorpayPaymentId,
+    razorpayOrderId: input.razorpayOrderId,
+    phone: input.phone,
+    webhookEventId: input.webhookEventId,
   });
 
   if (!paid) {
-    // Already processed or unknown reference
-    return;
+    return null;
   }
 
   const { sessionMinutes } = getConsultationPricing();
@@ -81,21 +77,22 @@ export async function processWhatsAppPaymentStatus(
     razorpayPaymentId: paid.razorpayPaymentId,
   });
 
-  const reply = successMessage();
+  const reply = paymentSuccessMessage();
 
   await saveConversationTurn(
     paid.phone,
     "[भुगतान सफल — WhatsApp Pay]",
     reply,
-    paid.contactName,
+    paid.contactName ?? input.contactName,
     "active",
   );
 
   try {
+    // Meta PG order_status uses captured/failed/pending — not "completed"
     await sendOrderStatusUpdate({
       to: paid.phone,
-      referenceId,
-      status: "completed",
+      referenceId: input.referenceId,
+      status: "captured",
       bodyText: "भुगतान सफल — आपका परामर्श सत्र शुरू हो गया है।",
       description: "Payment captured",
     });
@@ -103,5 +100,129 @@ export async function processWhatsAppPaymentStatus(
     console.warn("[whatsapp payment] order_status update failed", error);
   }
 
-  await sendHumanTextMessage({ to: paid.phone, body: reply });
+  try {
+    await sendHumanTextMessage({
+      to: paid.phone,
+      body: reply,
+      waitUntilSent: true,
+    });
+  } catch (error) {
+    console.error("[whatsapp payment] success message failed", error);
+  }
+
+  return paid;
+}
+
+/**
+ * Handle WhatsApp statuses of type "payment" (Native Pay Now).
+ * Confirms via Meta lookup when possible; falls back to webhook txn success.
+ */
+export async function processWhatsAppPaymentStatus(
+  statusUpdate: WhatsAppStatusUpdate,
+): Promise<void> {
+  if (statusUpdate.type !== "payment") return;
+
+  const referenceId = statusUpdate.payment?.reference_id?.trim();
+  if (!referenceId) {
+    console.warn("[whatsapp payment] Missing reference_id", statusUpdate.id);
+    return;
+  }
+
+  const webhookStatus = (statusUpdate.status || "").toLowerCase();
+  const phone = statusUpdate.recipient_id;
+  const eventId = statusUpdate.id || `wa_pay_${referenceId}_${webhookStatus}`;
+
+  console.info(
+    `[whatsapp payment] ${webhookStatus} | ref: ${referenceId} | to: ${phone}`,
+  );
+
+  const webhookLooksPaid = isSuccessfulWebhook(statusUpdate);
+  if (
+    !webhookLooksPaid &&
+    webhookStatus !== "pending" &&
+    webhookStatus !== "captured"
+  ) {
+    return;
+  }
+
+  let lookupPaid = false;
+  let razorpayPaymentId =
+    statusUpdate.payment?.transaction?.pg_transaction_id;
+  let razorpayOrderId = statusUpdate.payment?.transaction?.id;
+
+  try {
+    const lookup = await lookupWhatsAppPayment(referenceId);
+    if (lookup) {
+      console.info(
+        `[whatsapp payment] lookup status=${lookup.status} ref=${referenceId}`,
+      );
+      lookupPaid = isLookupPaid(lookup);
+      razorpayPaymentId = lookup.razorpayPaymentId ?? razorpayPaymentId;
+      razorpayOrderId = lookup.razorpayOrderId ?? razorpayOrderId;
+    } else {
+      console.warn("[whatsapp payment] Lookup failed", referenceId);
+    }
+  } catch (error) {
+    console.warn("[whatsapp payment] Lookup error", referenceId, error);
+  }
+
+  // Unlock when lookup confirms OR webhook already reports captured/success.
+  // (UI can show Paid while lookup briefly lags or fails.)
+  if (!lookupPaid && !webhookLooksPaid) {
+    console.info(
+      `[whatsapp payment] not confirmed yet — waiting`,
+      referenceId,
+    );
+    return;
+  }
+
+  const paid = await fulfillWhatsAppConsultationPayment({
+    referenceId,
+    phone,
+    razorpayPaymentId,
+    razorpayOrderId,
+    webhookEventId: eventId,
+  });
+
+  if (!paid) {
+    console.info(
+      "[whatsapp payment] fulfill skipped (already paid or unknown ref)",
+      referenceId,
+    );
+  }
+}
+
+/**
+ * If user paid but webhook/fulfill missed, re-check pending WA invoice via Meta
+ * and unlock on the next message.
+ */
+export async function reconcilePendingWhatsAppPayment(
+  phone: string,
+): Promise<boolean> {
+  const pending = await findReusableWhatsAppPayment(phone);
+  if (!pending) return false;
+
+  const referenceId = pending.referenceId ?? pending.paymentLinkId;
+  if (!referenceId) return false;
+
+  try {
+    const lookup = await lookupWhatsAppPayment(referenceId);
+    if (!lookup || !isLookupPaid(lookup)) {
+      return false;
+    }
+
+    const paid = await fulfillWhatsAppConsultationPayment({
+      referenceId,
+      phone: pending.phone,
+      razorpayPaymentId: lookup.razorpayPaymentId,
+      razorpayOrderId: lookup.razorpayOrderId,
+      webhookEventId: `reconcile_${referenceId}_${Date.now()}`,
+      contactName: pending.contactName,
+    });
+
+    return Boolean(paid);
+  } catch (error) {
+    console.warn("[whatsapp payment] reconcile failed", referenceId, error);
+    return false;
+  }
 }

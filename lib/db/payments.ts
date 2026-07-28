@@ -121,17 +121,25 @@ export async function findReusableWhatsAppPayment(
   return doc as PaymentRecord | null;
 }
 
-export async function findPaymentByReferenceId(
-  referenceId: string,
+export async function findLatestWhatsAppPayment(
+  phone: string,
 ): Promise<PaymentRecord | null> {
   await ensureIndexes();
   const db = await getDb();
-  const doc = await db.collection(COLLECTION).findOne({
-    $or: [{ referenceId }, { paymentLinkId: referenceId }],
-  });
+  const doc = await db.collection(COLLECTION).findOne(
+    {
+      phone,
+      channel: "whatsapp_pay",
+    },
+    { sort: { createdAt: -1 } },
+  );
   return doc as PaymentRecord | null;
 }
 
+/**
+ * Mark a payment paid. If already paid, returns the existing paid record
+ * when `returnIfAlreadyPaid` is true (for session/message recovery).
+ */
 export async function markPaymentPaid(input: {
   paymentLinkId?: string;
   referenceId?: string;
@@ -139,6 +147,7 @@ export async function markPaymentPaid(input: {
   razorpayOrderId?: string;
   phone?: string;
   webhookEventId: string;
+  returnIfAlreadyPaid?: boolean;
 }): Promise<PaymentRecord | null> {
   await ensureIndexes();
   const db = await getDb();
@@ -175,7 +184,7 @@ export async function markPaymentPaid(input: {
       { paymentLinkId: existing.paymentLinkId },
       { $addToSet: { webhookEventIds: input.webhookEventId } },
     );
-    return null;
+    return input.returnIfAlreadyPaid ? existing : null;
   }
 
   if (existing.webhookEventIds?.includes(input.webhookEventId)) {

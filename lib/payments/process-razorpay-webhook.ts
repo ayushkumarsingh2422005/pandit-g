@@ -19,11 +19,12 @@ type RazorpayWebhookPayload = {
 
 function readNotes(
   entity: Record<string, unknown> | undefined,
-): { phone?: string; contactName?: string } {
+): { phone?: string; contactName?: string; referenceId?: string } {
   const notes = entity?.notes as Record<string, string> | undefined;
   return {
     phone: notes?.phone,
     contactName: notes?.contactName || undefined,
+    referenceId: notes?.reference_id || notes?.referenceId || undefined,
   };
 }
 
@@ -36,6 +37,19 @@ function extractPhoneFromWebhook(
   return (
     readNotes(paymentEntity).phone ||
     readNotes(linkEntity).phone ||
+    (linkEntity?.reference_id as string | undefined)
+  );
+}
+
+function extractReferenceFromWebhook(
+  payload: RazorpayWebhookPayload,
+): string | undefined {
+  const paymentEntity = payload.payload?.payment?.entity;
+  const linkEntity = payload.payload?.payment_link?.entity;
+  return (
+    readNotes(paymentEntity).referenceId ||
+    readNotes(linkEntity).referenceId ||
+    (paymentEntity?.receipt as string | undefined) ||
     (linkEntity?.reference_id as string | undefined)
   );
 }
@@ -60,23 +74,26 @@ export async function processRazorpayWebhookEvent(
   const linkEntity = payload.payload?.payment_link?.entity;
 
   const phone = extractPhoneFromWebhook(payload);
+  const referenceId = extractReferenceFromWebhook(payload);
   const paymentLinkId =
     (linkEntity?.id as string | undefined) ||
     (paymentEntity?.payment_link_id as string | undefined);
   const razorpayPaymentId = paymentEntity?.id as string | undefined;
 
-  if (!phone && !paymentLinkId) {
-    console.warn("[razorpay webhook] No phone or payment link id", event);
+  if (!phone && !paymentLinkId && !referenceId) {
+    console.warn("[razorpay webhook] No phone, payment link, or reference", event);
     return;
   }
 
   const { markPaymentPaid } = await import("@/lib/db/payments");
 
   const paid: PaymentRecord | null = await markPaymentPaid({
+    referenceId,
     paymentLinkId,
     razorpayPaymentId,
     phone,
     webhookEventId: eventId,
+    returnIfAlreadyPaid: true,
   });
 
   if (!paid) {
@@ -84,6 +101,7 @@ export async function processRazorpayWebhookEvent(
       event,
       phone,
       paymentLinkId,
+      referenceId,
     });
     return;
   }

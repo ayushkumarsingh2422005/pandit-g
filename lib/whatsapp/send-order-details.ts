@@ -66,6 +66,7 @@ export async function sendOrderDetailsPayNow(
                     phone: input.to,
                     contactName: input.contactName ?? "",
                     product: "consultation_session",
+                    reference_id: input.referenceId,
                   },
                 },
               },
@@ -146,7 +147,11 @@ export async function sendOrderDetailsPayNow(
 export async function sendOrderStatusUpdate(input: {
   to: string;
   referenceId: string;
+  /** PG invoices: pending | captured | failed. Shipping-style values kept for compat. */
   status:
+    | "pending"
+    | "captured"
+    | "failed"
     | "processing"
     | "partially_shipped"
     | "shipped"
@@ -225,6 +230,14 @@ export async function lookupWhatsAppPayment(
         status?: string;
       }>;
     }>;
+    // Some API versions return a single payment object
+    reference_id?: string;
+    status?: string;
+    transactions?: Array<{
+      id?: string;
+      pg_transaction_id?: string;
+      status?: string;
+    }>;
     error?: unknown;
   };
 
@@ -233,13 +246,19 @@ export async function lookupWhatsAppPayment(
     return null;
   }
 
-  const payment = data.payments?.[0];
+  const payment = data.payments?.[0] ?? (data.status ? data : null);
   if (!payment?.status) return null;
 
-  const successTxn = payment.transactions?.find((t) => t.status === "success");
+  const txns = payment.transactions ?? [];
+  const successTxn =
+    txns.find((t) => t.status === "success") ??
+    txns.find((t) => Boolean(t.pg_transaction_id));
+
+  const statusLower = (payment.status || "").toLowerCase();
+  const txnPaid = txns.some((t) => (t.status || "").toLowerCase() === "success");
 
   return {
-    status: payment.status,
+    status: txnPaid && statusLower !== "captured" ? "captured" : payment.status,
     razorpayOrderId: successTxn?.id,
     razorpayPaymentId: successTxn?.pg_transaction_id,
   };

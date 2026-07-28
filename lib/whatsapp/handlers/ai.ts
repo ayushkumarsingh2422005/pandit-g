@@ -25,6 +25,7 @@ import {
   isPaymentIntent,
   userClaimsTheyPaid,
 } from "@/lib/payments/payment-intent";
+import { reconcilePendingWhatsAppPayment } from "@/lib/payments/process-whatsapp-payment-status";
 import { getConsultationPricing } from "@/lib/config/consultation-pricing";
 import { getOrCreateConsultationPaymentLink } from "@/lib/razorpay/create-payment-link";
 import { isRazorpayConfigured } from "@/lib/razorpay/is-configured";
@@ -173,7 +174,15 @@ async function handlePaidConsultationGate(
   storedUserMessage: string,
   stage: "reading_delivered" | "active",
 ) {
-  const access = await getConsultationAccess(message.from);
+  let access = await getConsultationAccess(message.from);
+
+  // Payment bubble can show Paid while our webhook/fulfill missed — recover here.
+  if (!access.hasAccess) {
+    const recovered = await reconcilePendingWhatsAppPayment(message.from);
+    if (recovered) {
+      access = await getConsultationAccess(message.from);
+    }
+  }
 
   if (access.hasAccess) {
     const startedAt = Date.now();
