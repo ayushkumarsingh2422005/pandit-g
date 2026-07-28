@@ -277,13 +277,14 @@ async function sendPaymentOfferAfterIntake(
   const priceFormatted = `₹${selected.priceInr}`;
   const itemName =
     selected.kind === "phone"
-      ? "फोन कॉल परामर्श (15 मिनट)"
-      : selected.shortLabel;
+      ? "Call परामर्श (15 मिनट) ₹201"
+      : "WhatsApp परामर्श ₹101";
 
   if (native) {
     const bodyText =
-      `${selected.shortLabel} — दक्षिणा ${priceFormatted}। ` +
-      `नीचे Review and pay दबाकर दक्षिणा पूर्ण करें।`;
+      selected.kind === "phone"
+        ? `Call परामर्श — दक्षिणा ${priceFormatted}। नीचे Review and pay दबाकर दक्षिणा पूर्ण करें।`
+        : `WhatsApp परामर्श — दक्षिणा ${priceFormatted}। नीचे Review and pay दबाकर दक्षिणा पूर्ण करें।`;
 
     await saveConversationTurn(
       message.from,

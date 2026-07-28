@@ -3,31 +3,31 @@ import {
   type StoredChatMessage,
 } from "@/lib/db/conversations";
 import {
-  askBirthAndQuestionMessage,
+  askBirthMessage,
   askDurationMessage,
   askMissingBirthFieldsMessage,
   askPriorAttemptsMessage,
-  askQuestionOnlyMessage,
-  extractSpecialQuestion,
-  featuresAndPackageInteractive,
-  featuresAndPackageMenuMessage,
+  askProblemDetailMessage,
+  benefitsBeforePayNow,
+  consultChoiceInteractive,
+  consultChoiceMessage,
   formatIntakeProfileForAi,
+  isFreeTextProblemOnWelcome,
   isLikelyGreetingOnly,
   normalizeIntakeStep,
   parsePackageChoice,
   parseProblemChoice,
-  paymentAckBeforePayNow,
-  reAskPackageInteractive,
-  reAskPackageMessage,
+  reAskConsultChoiceInteractive,
+  reAskConsultChoiceMessage,
   welcomeInteractive,
   welcomeMessage,
   type IntakeInteractive,
   type IntakeProfile,
   type IntakeStep,
+  type ProblemCode,
   type ServicePackage,
 } from "@/lib/funnel/intake-script";
 import {
-  hasBirthDetailsInText,
   hasCompleteBirthDetailsInHistory,
   missingBirthFields,
 } from "@/lib/funnel/detect-birth-details";
@@ -80,7 +80,8 @@ function replyResult(
 }
 
 /**
- * Scripted intake (no LLM). Interactive menus until package → Pay Now.
+ * Scripted intake per client pages 1–3.
+ * Interactive until consult choice → Pay Now.
  */
 export async function advanceScriptedIntake(input: {
   step: IntakeStep | null;
@@ -93,6 +94,7 @@ export async function advanceScriptedIntake(input: {
   const profile: IntakeProfile = { ...input.profile };
   const text = trimUserText(input.userText);
 
+  // ── Page 1: problem category ──────────────────────────────────────
   if (step === "awaiting_problem") {
     if (isLikelyGreetingOnly(text)) {
       return replyResult(
@@ -102,6 +104,16 @@ export async function advanceScriptedIntake(input: {
         welcomeInteractive(),
       );
     }
+
+    // User wrote their problem instead of picking a menu row
+    if (isFreeTextProblemOnWelcome(text)) {
+      profile.problemCode = "other";
+      profile.problem = "अन्य";
+      profile.problemDetail = text.slice(0, 400);
+      profile.specialQuestion = profile.problemDetail;
+      return replyResult(askDurationMessage(), "awaiting_duration", profile);
+    }
+
     const problem = parseProblemChoice(text);
     if (!problem) {
       return replyResult(
@@ -111,11 +123,45 @@ export async function advanceScriptedIntake(input: {
         welcomeInteractive(),
       );
     }
+
     profile.problem = problem.label;
     profile.problemCode = problem.code;
+
+    // Free-text that mapped to a category with long label = detail already given
+    if (
+      problem.code === "other" &&
+      problem.label.length > 20 &&
+      !/^(अन्य|other)$/i.test(problem.label)
+    ) {
+      profile.problemDetail = problem.label;
+      profile.specialQuestion = problem.label;
+      return replyResult(askDurationMessage(), "awaiting_duration", profile);
+    }
+
+    return replyResult(
+      askProblemDetailMessage(problem.code),
+      "awaiting_problem_detail",
+      profile,
+    );
+  }
+
+  // ── Category follow-up detail ─────────────────────────────────────
+  if (step === "awaiting_problem_detail") {
+    if (!text || text.length < 2) {
+      return replyResult(
+        askProblemDetailMessage(
+          (profile.problemCode as ProblemCode) || "other",
+        ),
+        "awaiting_problem_detail",
+        profile,
+      );
+    }
+    profile.problemDetail = text.slice(0, 400);
+    profile.specialQuestion = profile.problemDetail;
     return replyResult(askDurationMessage(), "awaiting_duration", profile);
   }
 
+  // ── Duration ──────────────────────────────────────────────────────
   if (step === "awaiting_duration") {
     if (!text) {
       return replyResult(askDurationMessage(), "awaiting_duration", profile);
@@ -128,16 +174,14 @@ export async function advanceScriptedIntake(input: {
     );
   }
 
+  // ── Prior attempts ────────────────────────────────────────────────
   if (step === "awaiting_prior_attempts") {
     profile.priorAttempts = text ? text.slice(0, 400) : "नहीं बताया";
-    return replyResult(
-      askBirthAndQuestionMessage(),
-      "awaiting_birth_and_question",
-      profile,
-    );
+    return replyResult(askBirthMessage(), "awaiting_birth", profile);
   }
 
-  if (step === "awaiting_birth_and_question") {
+  // ── Birth details ─────────────────────────────────────────────────
+  if (step === "awaiting_birth") {
     let missing = missingBirthFields(
       input.history,
       input.userText,
@@ -171,57 +215,28 @@ export async function advanceScriptedIntake(input: {
           : ["जन्म तिथि", "जन्म समय", "जन्म स्थान"];
       return replyResult(
         askMissingBirthFieldsMessage(fields),
-        "awaiting_birth_and_question",
+        "awaiting_birth",
         profile,
       );
     }
 
-    // Birth already known from earlier turns? Then this message is the question
-    // (don't treat "shadi nahi ho rahi" as a place name).
-    const birthAlreadyInHistory = hasCompleteBirthDetailsInHistory(
-      input.history,
-      "",
-      false,
-    );
-    const thisTurnIsBirthBundle = hasBirthDetailsInText(input.userText);
-
-    let question =
-      extractSpecialQuestion(text) || profile.specialQuestion || undefined;
-
-    if (!question && text.length >= 3 && !isLikelyGreetingOnly(text)) {
-      if (birthAlreadyInHistory && !thisTurnIsBirthBundle) {
-        // Follow-up after birth collected — any real reply is the question
-        question = text.slice(0, 500);
-      } else if (!thisTurnIsBirthBundle) {
-        question = text.slice(0, 500);
-      }
-      // else: birth+details in one message without a clear question → ask below
-    }
-
-    if (!question) {
-      return replyResult(
-        askQuestionOnlyMessage(),
-        "awaiting_birth_and_question",
-        profile,
-      );
-    }
-
-    profile.specialQuestion = question;
+    // Page 3 — personal consultation A/B
     return replyResult(
-      featuresAndPackageMenuMessage(),
-      "awaiting_package_choice",
+      consultChoiceMessage(),
+      "awaiting_consult_choice",
       profile,
-      featuresAndPackageInteractive(),
+      consultChoiceInteractive(),
     );
   }
 
+  // ── Consult choice A/B → benefits + Pay Now ───────────────────────
   const pkg = parsePackageChoice(text);
   if (!pkg) {
     return replyResult(
-      reAskPackageMessage(),
-      "awaiting_package_choice",
+      reAskConsultChoiceMessage(),
+      "awaiting_consult_choice",
       profile,
-      reAskPackageInteractive(),
+      reAskConsultChoiceInteractive(),
     );
   }
 
@@ -231,7 +246,7 @@ export async function advanceScriptedIntake(input: {
 
   return {
     kind: "ready_for_payment",
-    reply: paymentAckBeforePayNow(pkg),
+    reply: benefitsBeforePayNow(pkg),
     intakeProfile: profile,
     clientName: profile.clientName,
     selectedPackage: pkg,

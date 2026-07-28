@@ -122,7 +122,7 @@ function parseMessage(
     return {
       from: message.from,
       messageId: message.id,
-      // Prefer stable id (problem_2 / pkg_1); title as fallback for free-text parsers
+      // Prefer stable id (problem_love / pkg_a); title as fallback
       text: id || title || "",
       contactName,
     };
