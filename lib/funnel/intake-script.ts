@@ -397,16 +397,22 @@ export function extractSpecialQuestion(text: string): string | undefined {
     return labeled[1].trim().slice(0, 500);
   }
 
-  if (/[?？]|क्या\s|कब\s|कैसे\s|milegi|hogi|होगी|मिलेगी/i.test(cleaned)) {
-    // Prefer last sentence-looking chunk
+  if (
+    /[?？]|क्या\s|कब\s|कैसे\s|\bkb\b|\bkya\b|milegi|hogi|होगी|मिलेगी|ho\s*rahi|nahi\s*ho|शादी|vivah|shaadi|naukri|job|paise|पैसे/i.test(
+      cleaned,
+    )
+  ) {
     const parts = cleaned
       .split(/[\n।]/)
       .map((p) => p.trim())
       .filter(Boolean);
     const q = parts.find((p) =>
-      /[?？]|क्या\s|कब\s|कैसे\s|milegi|hogi|होगी|मिलेगी/i.test(p),
+      /[?？]|क्या\s|कब\s|कैसे\s|\bkb\b|\bkya\b|milegi|hogi|होगी|मिलेगी|ho\s*rahi|nahi\s*ho|शादी|vivah|shaadi|naukri|job|paise|पैसे/i.test(
+        p,
+      ),
     );
-    if (q && q.length >= 8) return q.slice(0, 500);
+    if (q && q.length >= 5) return q.slice(0, 500);
+    if (cleaned.length >= 5) return cleaned.slice(0, 500);
   }
 
   return undefined;

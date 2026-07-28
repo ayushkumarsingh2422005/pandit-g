@@ -19,6 +19,8 @@ export type PaymentRecord = {
   razorpayPaymentId?: string;
   razorpayOrderId?: string;
   webhookEventIds: string[];
+  /** Set once when success WhatsApp text is sent — prevents duplicate messages. */
+  successNotifiedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
   paidAt?: Date;
@@ -191,8 +193,9 @@ export async function markPaymentPaid(input: {
     return null;
   }
 
-  await db.collection(COLLECTION).updateOne(
-    { paymentLinkId: existing.paymentLinkId },
+  // Atomic: only one concurrent webhook can flip created → paid
+  const updated = (await db.collection(COLLECTION).findOneAndUpdate(
+    { paymentLinkId: existing.paymentLinkId, status: "created" },
     {
       $set: {
         status: "paid",
@@ -204,15 +207,47 @@ export async function markPaymentPaid(input: {
       },
       $addToSet: { webhookEventIds: input.webhookEventId },
     },
-  );
+    { returnDocument: "after" },
+  )) as PaymentRecord | null;
 
-  return {
-    ...existing,
-    status: "paid",
-    paidAt: now,
-    razorpayPaymentId: input.razorpayPaymentId ?? existing.razorpayPaymentId,
-    razorpayOrderId: input.razorpayOrderId ?? existing.razorpayOrderId,
-  };
+  if (!updated || updated.status !== "paid") {
+    // Lost race — another webhook already marked paid
+    const paidDoc = (await db.collection(COLLECTION).findOne({
+      paymentLinkId: existing.paymentLinkId,
+    })) as PaymentRecord | null;
+    return input.returnIfAlreadyPaid ? paidDoc : null;
+  }
+
+  return updated;
+}
+
+/**
+ * Claim the right to send the one-time “दक्षिणा प्राप्त” WhatsApp message.
+ * Returns true only for the first caller.
+ */
+export async function claimPaymentSuccessNotification(
+  paymentLinkId: string,
+): Promise<boolean> {
+  await ensureIndexes();
+  const db = await getDb();
+  const now = new Date();
+
+  const doc = (await db.collection(COLLECTION).findOneAndUpdate(
+    {
+      paymentLinkId,
+      status: "paid",
+      successNotifiedAt: { $exists: false },
+    },
+    {
+      $set: {
+        successNotifiedAt: now,
+        updatedAt: now,
+      },
+    },
+    { returnDocument: "after" },
+  )) as PaymentRecord | null;
+
+  return Boolean(doc?.successNotifiedAt);
 }
 
 export async function findPaymentByLinkId(

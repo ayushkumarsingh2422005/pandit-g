@@ -3,14 +3,6 @@ import {
   type StoredChatMessage,
 } from "@/lib/db/conversations";
 import {
-  hasCompleteBirthDetailsInHistory,
-  missingBirthFields,
-} from "@/lib/funnel/detect-birth-details";
-import {
-  extractBirthDetailsUniversally,
-  universalMissingFields,
-} from "@/lib/funnel/extract-birth-details-ai";
-import {
   askBirthAndQuestionMessage,
   askDurationMessage,
   askMissingBirthFieldsMessage,
@@ -34,6 +26,15 @@ import {
   type IntakeStep,
   type ServicePackage,
 } from "@/lib/funnel/intake-script";
+import {
+  hasBirthDetailsInText,
+  hasCompleteBirthDetailsInHistory,
+  missingBirthFields,
+} from "@/lib/funnel/detect-birth-details";
+import {
+  extractBirthDetailsUniversally,
+  universalMissingFields,
+} from "@/lib/funnel/extract-birth-details-ai";
 
 export type IntakeHandlerResult =
   | {
@@ -175,19 +176,26 @@ export async function advanceScriptedIntake(input: {
       );
     }
 
+    // Birth already known from earlier turns? Then this message is the question
+    // (don't treat "shadi nahi ho rahi" as a place name).
+    const birthAlreadyInHistory = hasCompleteBirthDetailsInHistory(
+      input.history,
+      "",
+      false,
+    );
+    const thisTurnIsBirthBundle = hasBirthDetailsInText(input.userText);
+
     let question =
       extractSpecialQuestion(text) || profile.specialQuestion || undefined;
 
-    const missingInThisTurn = missingBirthFields([], input.userText, false);
-    const thisTurnLooksLikeBirth = missingInThisTurn.length < 3;
-
-    if (
-      !question &&
-      text.length >= 8 &&
-      !thisTurnLooksLikeBirth &&
-      !isLikelyGreetingOnly(text)
-    ) {
-      question = text.slice(0, 500);
+    if (!question && text.length >= 3 && !isLikelyGreetingOnly(text)) {
+      if (birthAlreadyInHistory && !thisTurnIsBirthBundle) {
+        // Follow-up after birth collected — any real reply is the question
+        question = text.slice(0, 500);
+      } else if (!thisTurnIsBirthBundle) {
+        question = text.slice(0, 500);
+      }
+      // else: birth+details in one message without a clear question → ask below
     }
 
     if (!question) {

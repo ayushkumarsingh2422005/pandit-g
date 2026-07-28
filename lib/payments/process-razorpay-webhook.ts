@@ -1,12 +1,7 @@
 import type { PaymentRecord } from "@/lib/db/payments";
 import { startConsultationSession } from "@/lib/db/sessions";
-import { saveConversationTurn } from "@/lib/db/conversations";
 import { getRazorpayConfig } from "@/lib/razorpay/config";
-import { sendHumanTextMessage } from "@/lib/whatsapp/human-typing";
-
-function buildPaymentSuccessMessage(_contactName: string | undefined): string {
-  return `दक्षिणा प्राप्त हुई। अब जो भी दिल पर लगा हो वो लिखिए — सुनकर आगे बात करते हैं।`;
-}
+import { notifyPaymentSuccessOnce } from "@/lib/payments/process-whatsapp-payment-status";
 
 type RazorpayWebhookPayload = {
   event?: string;
@@ -81,7 +76,10 @@ export async function processRazorpayWebhookEvent(
   const razorpayPaymentId = paymentEntity?.id as string | undefined;
 
   if (!phone && !paymentLinkId && !referenceId) {
-    console.warn("[razorpay webhook] No phone, payment link, or reference", event);
+    console.warn(
+      "[razorpay webhook] No phone, payment link, or reference",
+      event,
+    );
     return;
   }
 
@@ -116,15 +114,8 @@ export async function processRazorpayWebhookEvent(
     razorpayPaymentId: paid.razorpayPaymentId,
   });
 
-  const reply = buildPaymentSuccessMessage(paid.contactName);
-
-  await saveConversationTurn(
-    paid.phone,
-    "[भुगतान सफल]",
-    reply,
-    paid.contactName,
-    "active",
-  );
-
-  await sendHumanTextMessage({ to: paid.phone, body: reply });
+  // Shared claim — won't duplicate if WhatsApp webhook already notified
+  await notifyPaymentSuccessOnce(paid, {
+    referenceId: referenceId ?? paid.referenceId,
+  });
 }
