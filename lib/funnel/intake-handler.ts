@@ -2,7 +2,6 @@ import {
   saveConversationTurn,
   type StoredChatMessage,
 } from "@/lib/db/conversations";
-import { getConsultationPricing } from "@/lib/config/consultation-pricing";
 import {
   hasCompleteBirthDetailsInHistory,
   missingBirthFields,
@@ -12,25 +11,25 @@ import {
   universalMissingFields,
 } from "@/lib/funnel/extract-birth-details-ai";
 import {
-  askBirthDetailsMessage,
+  askBirthAndQuestionMessage,
   askDurationMessage,
   askMissingBirthFieldsMessage,
   askPriorAttemptsMessage,
-  askProblemMessage,
-  confirmAndAskQuestionMessage,
+  askQuestionOnlyMessage,
+  extractSpecialQuestion,
+  featuresAndPackageMenuMessage,
   formatIntakeProfileForAi,
-  isAffirmativeReady,
   isLikelyGreetingOnly,
-  packageFeeAndAskHaanMessage,
-  parseClientName,
+  normalizeIntakeStep,
+  parsePackageChoice,
   parseProblemChoice,
-  reAskHaanMessage,
-  reAskNameMessage,
+  paymentAckBeforePayNow,
+  reAskPackageMessage,
   welcomeMessage,
   type IntakeProfile,
   type IntakeStep,
+  type ServicePackage,
 } from "@/lib/funnel/intake-script";
-import { isPaymentIntent } from "@/lib/payments/payment-intent";
 
 export type IntakeHandlerResult =
   | {
@@ -46,6 +45,7 @@ export type IntakeHandlerResult =
       reply: string;
       intakeProfile: IntakeProfile;
       clientName?: string;
+      selectedPackage: ServicePackage;
     };
 
 function trimUserText(text: string): string {
@@ -56,9 +56,23 @@ function trimUserText(text: string): string {
     .trim();
 }
 
+function replyResult(
+  reply: string,
+  intakeStep: IntakeStep,
+  profile: IntakeProfile,
+): Extract<IntakeHandlerResult, { kind: "reply" }> {
+  return {
+    kind: "reply",
+    reply,
+    funnelStage: "awaiting_details",
+    intakeStep,
+    intakeProfile: profile,
+    clientName: profile.clientName,
+  };
+}
+
 /**
- * Scripted intake (no LLM). Returns next bot reply + updated step,
- * or signals that user said हाँ and payment should start.
+ * Scripted intake (no LLM). Menu-driven until package selected → Pay Now.
  */
 export async function advanceScriptedIntake(input: {
   step: IntakeStep | null;
@@ -67,93 +81,45 @@ export async function advanceScriptedIntake(input: {
   hasImage: boolean;
   history: StoredChatMessage[];
 }): Promise<IntakeHandlerResult> {
-  const step = input.step ?? "awaiting_name";
+  const step = normalizeIntakeStep(input.step);
   const profile: IntakeProfile = { ...input.profile };
   const text = trimUserText(input.userText);
 
-  if (step === "awaiting_name") {
-    const name = parseClientName(text);
-    if (!name) {
-      return {
-        kind: "reply",
-        reply: isLikelyGreetingOnly(text)
-          ? reAskNameMessage()
-          : reAskNameMessage(),
-        funnelStage: "awaiting_details",
-        intakeStep: "awaiting_name",
-        intakeProfile: profile,
-      };
-    }
-    profile.clientName = name;
-    return {
-      kind: "reply",
-      reply: askProblemMessage(name),
-      funnelStage: "awaiting_details",
-      intakeStep: "awaiting_problem",
-      intakeProfile: profile,
-      clientName: name,
-    };
-  }
-
   if (step === "awaiting_problem") {
+    if (isLikelyGreetingOnly(text)) {
+      return replyResult(welcomeMessage(), "awaiting_problem", profile);
+    }
     const problem = parseProblemChoice(text);
     if (!problem) {
-      return {
-        kind: "reply",
-        reply: askProblemMessage(profile.clientName || "आप"),
-        funnelStage: "awaiting_details",
-        intakeStep: "awaiting_problem",
-        intakeProfile: profile,
-        clientName: profile.clientName,
-      };
+      return replyResult(welcomeMessage(), "awaiting_problem", profile);
     }
     profile.problem = problem.label;
     profile.problemCode = problem.code;
-    return {
-      kind: "reply",
-      reply: askDurationMessage(),
-      funnelStage: "awaiting_details",
-      intakeStep: "awaiting_duration",
-      intakeProfile: profile,
-      clientName: profile.clientName,
-    };
+    return replyResult(askDurationMessage(), "awaiting_duration", profile);
   }
 
   if (step === "awaiting_duration") {
-    if (!text || text.length < 1) {
-      return {
-        kind: "reply",
-        reply: askDurationMessage(),
-        funnelStage: "awaiting_details",
-        intakeStep: "awaiting_duration",
-        intakeProfile: profile,
-        clientName: profile.clientName,
-      };
+    if (!text) {
+      return replyResult(askDurationMessage(), "awaiting_duration", profile);
     }
     profile.duration = text.slice(0, 200);
-    return {
-      kind: "reply",
-      reply: askPriorAttemptsMessage(),
-      funnelStage: "awaiting_details",
-      intakeStep: "awaiting_prior_attempts",
-      intakeProfile: profile,
-      clientName: profile.clientName,
-    };
+    return replyResult(
+      askPriorAttemptsMessage(),
+      "awaiting_prior_attempts",
+      profile,
+    );
   }
 
   if (step === "awaiting_prior_attempts") {
     profile.priorAttempts = text ? text.slice(0, 400) : "नहीं बताया";
-    return {
-      kind: "reply",
-      reply: askBirthDetailsMessage(),
-      funnelStage: "awaiting_details",
-      intakeStep: "awaiting_birth_details",
-      intakeProfile: profile,
-      clientName: profile.clientName,
-    };
+    return replyResult(
+      askBirthAndQuestionMessage(),
+      "awaiting_birth_and_question",
+      profile,
+    );
   }
 
-  if (step === "awaiting_birth_details") {
+  if (step === "awaiting_birth_and_question") {
     let missing = missingBirthFields(
       input.history,
       input.userText,
@@ -185,68 +151,78 @@ export async function advanceScriptedIntake(input: {
         missing.length > 0
           ? missing
           : ["जन्म तिथि", "जन्म समय", "जन्म स्थान"];
-      return {
-        kind: "reply",
-        reply: askMissingBirthFieldsMessage(fields),
-        funnelStage: "awaiting_details",
-        intakeStep: "awaiting_birth_details",
-        intakeProfile: profile,
-        clientName: profile.clientName,
-      };
+      return replyResult(
+        askMissingBirthFieldsMessage(fields),
+        "awaiting_birth_and_question",
+        profile,
+      );
     }
 
-    return {
-      kind: "reply",
-      reply: confirmAndAskQuestionMessage(),
-      funnelStage: "awaiting_details",
-      intakeStep: "awaiting_question",
-      intakeProfile: profile,
-      clientName: profile.clientName,
-    };
+    // Birth is complete — resolve main question from this turn or history.
+    let question =
+      extractSpecialQuestion(text) || profile.specialQuestion || undefined;
+
+    const missingInThisTurn = missingBirthFields([], input.userText, false);
+    const thisTurnLooksLikeBirth = missingInThisTurn.length < 3;
+
+    // Follow-up turn: user only sent the question after we asked for it.
+    if (
+      !question &&
+      text.length >= 8 &&
+      !thisTurnLooksLikeBirth &&
+      !isLikelyGreetingOnly(text)
+    ) {
+      question = text.slice(0, 500);
+    }
+
+    if (!question) {
+      return replyResult(
+        askQuestionOnlyMessage(),
+        "awaiting_birth_and_question",
+        profile,
+      );
+    }
+
+    profile.specialQuestion = question;
+    return replyResult(
+      featuresAndPackageMenuMessage(),
+      "awaiting_package_choice",
+      profile,
+    );
   }
 
-  if (step === "awaiting_question") {
-    profile.specialQuestion = text
-      ? text.slice(0, 500)
-      : "कोई विशेष प्रश्न नहीं";
-    const pricing = getConsultationPricing();
-    return {
-      kind: "reply",
-      reply: packageFeeAndAskHaanMessage(pricing.priceInrFormatted),
-      funnelStage: "awaiting_details",
-      intakeStep: "awaiting_haan",
-      intakeProfile: profile,
-      clientName: profile.clientName,
-    };
+  // awaiting_package_choice
+  const pkg = parsePackageChoice(text);
+  if (!pkg) {
+    return replyResult(
+      reAskPackageMessage(),
+      "awaiting_package_choice",
+      profile,
+    );
   }
 
-  // awaiting_haan
-  if (isAffirmativeReady(text) || isPaymentIntent(text)) {
-    return {
-      kind: "ready_for_payment",
-      reply:
-        "🙏 धन्यवाद। मैं तुरंत भुगतान की प्रक्रिया शुरू कर रहा हूँ।",
-      intakeProfile: profile,
-      clientName: profile.clientName,
-    };
-  }
+  profile.selectedPackageCode = pkg.code;
+  profile.selectedPackageKind = pkg.kind;
+  profile.selectedPriceInr = pkg.priceInr;
 
   return {
-    kind: "reply",
-    reply: reAskHaanMessage(),
-    funnelStage: "awaiting_details",
-    intakeStep: "awaiting_haan",
+    kind: "ready_for_payment",
+    reply: paymentAckBeforePayNow(pkg),
     intakeProfile: profile,
     clientName: profile.clientName,
+    selectedPackage: pkg,
   };
 }
 
-export function startScriptedIntake(): IntakeHandlerResult {
+export function startScriptedIntake(): Extract<
+  IntakeHandlerResult,
+  { kind: "reply" }
+> {
   return {
     kind: "reply",
     reply: welcomeMessage(),
     funnelStage: "awaiting_details",
-    intakeStep: "awaiting_name",
+    intakeStep: "awaiting_problem",
     intakeProfile: {},
   };
 }

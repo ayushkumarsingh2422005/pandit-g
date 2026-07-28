@@ -34,19 +34,28 @@ export async function sendConsultationPayNow(input: {
   contactName?: string;
   bodyText: string;
   forceNew?: boolean;
+  /** Selected package amount; defaults to CONSULTATION_PRICE. */
+  amountPaise?: number;
+  itemName?: string;
 }): Promise<WhatsAppPayOfferResult> {
   const pricing = getConsultationPricing();
+  const amountPaise = input.amountPaise ?? pricing.pricePaise;
   const paymentLinkExpirySeconds = paymentExpirySeconds();
 
   if (!input.forceNew) {
     const existing = await findReusableWhatsAppPayment(input.phone);
-    if (existing?.referenceId || existing?.paymentLinkId) {
+    if (
+      (existing?.referenceId || existing?.paymentLinkId) &&
+      existing.amountPaise === amountPaise
+    ) {
       const referenceId = existing.referenceId ?? existing.paymentLinkId;
       const sent = await sendOrderDetailsPayNow({
         to: input.phone,
         referenceId,
         bodyText: input.bodyText,
         contactName: input.contactName,
+        amountPaise,
+        itemName: input.itemName,
         expiresInSeconds: paymentLinkExpirySeconds,
       });
       return {
@@ -65,7 +74,7 @@ export async function sendConsultationPayNow(input: {
     phone: input.phone,
     paymentLinkId: referenceId,
     shortUrl: `whatsapp:pay:${referenceId}`,
-    amountPaise: pricing.pricePaise,
+    amountPaise,
     contactName: input.contactName,
     expiresAt,
     channel: "whatsapp_pay",
@@ -77,12 +86,14 @@ export async function sendConsultationPayNow(input: {
     referenceId,
     bodyText: input.bodyText,
     contactName: input.contactName,
+    amountPaise,
+    itemName: input.itemName,
     expiresInSeconds: paymentLinkExpirySeconds,
   });
 
   return {
     referenceId,
-    amountPaise: pricing.pricePaise,
+    amountPaise,
     reused: false,
     messageId: sent.messageId,
   };

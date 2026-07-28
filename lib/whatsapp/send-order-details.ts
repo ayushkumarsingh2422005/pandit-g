@@ -9,6 +9,8 @@ export type SendOrderDetailsInput = {
   footerText?: string;
   itemName?: string;
   contactName?: string;
+  /** Override default consultation price (paise). */
+  amountPaise?: number;
   /** Expire after this many seconds (min 300 per Meta). Default 3600. */
   expiresInSeconds?: number;
 };
@@ -24,7 +26,7 @@ export async function sendOrderDetailsPayNow(
   const { configurationName } = getWhatsAppPaymentConfig();
   const pricing = getConsultationPricing();
 
-  const amountValue = pricing.pricePaise;
+  const amountValue = input.amountPaise ?? pricing.pricePaise;
   const expiresIn = Math.max(300, input.expiresInSeconds ?? 3600);
   const expirationTimestamp = String(
     Math.floor(Date.now() / 1000) + expiresIn,

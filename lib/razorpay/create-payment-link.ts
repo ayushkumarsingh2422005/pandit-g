@@ -21,9 +21,15 @@ function formatWhatsAppContact(phone: string): string {
 export async function getOrCreateConsultationPaymentLink(
   phone: string,
   contactName?: string,
+  amountPaiseOverride?: number,
 ): Promise<PaymentLinkResult> {
   const existing = await findReusablePaymentLink(phone);
-  if (existing?.shortUrl && existing.paymentLinkId) {
+  if (
+    existing?.shortUrl &&
+    existing.paymentLinkId &&
+    (amountPaiseOverride == null ||
+      existing.amountPaise === amountPaiseOverride)
+  ) {
     return {
       paymentLinkId: existing.paymentLinkId,
       shortUrl: existing.shortUrl,
@@ -33,14 +39,15 @@ export async function getOrCreateConsultationPaymentLink(
     };
   }
 
-  const { pricePaise, sessionMinutes, paymentLinkExpirySeconds } =
+  const { pricePaise: defaultPaise, sessionMinutes, paymentLinkExpirySeconds } =
     getRazorpayConfig();
+  const pricePaise = amountPaiseOverride ?? defaultPaise;
   const razorpay = getRazorpayClient();
 
   const link = await razorpay.paymentLink.create({
     amount: pricePaise,
     currency: "INR",
-    description: `देवदत्त जोशी — WhatsApp परामर्श (${sessionMinutes} मिनट)`,
+    description: `देवदत्त जोशी — परामर्श (₹${Math.round(pricePaise / 100)})`,
     customer: {
       contact: formatWhatsAppContact(phone),
       name: contactName || undefined,
@@ -49,6 +56,7 @@ export async function getOrCreateConsultationPaymentLink(
       phone,
       contactName: contactName || "",
       product: "consultation_session",
+      amountInr: String(Math.round(pricePaise / 100)),
     },
     notify: { sms: false, email: false },
     reminder_enable: false,

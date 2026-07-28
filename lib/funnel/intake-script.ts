@@ -1,16 +1,33 @@
 /**
  * Fixed Hindi onboarding script (pre-AI / pre-payment).
- * Steps advance only on user replies — no LLM for this phase.
+ * Menu-driven until package selected and Pay Now is sent.
  */
 
 export type IntakeStep =
-  | "awaiting_name"
   | "awaiting_problem"
   | "awaiting_duration"
   | "awaiting_prior_attempts"
+  | "awaiting_birth_and_question"
+  | "awaiting_package_choice"
+  /** @deprecated legacy — treated as awaiting_problem */
+  | "awaiting_name"
+  /** @deprecated legacy */
   | "awaiting_birth_details"
+  /** @deprecated legacy */
   | "awaiting_question"
+  /** @deprecated legacy */
   | "awaiting_haan";
+
+export type ServicePackageKind = "whatsapp" | "phone";
+
+export type ServicePackage = {
+  code: string;
+  kind: ServicePackageKind;
+  priceInr: number;
+  pricePaise: number;
+  label: string;
+  shortLabel: string;
+};
 
 export type IntakeProfile = {
   clientName?: string;
@@ -19,6 +36,9 @@ export type IntakeProfile = {
   duration?: string;
   priorAttempts?: string;
   specialQuestion?: string;
+  selectedPackageCode?: string;
+  selectedPackageKind?: ServicePackageKind;
+  selectedPriceInr?: number;
 };
 
 export const PROBLEM_OPTIONS: { code: string; label: string }[] = [
@@ -32,24 +52,41 @@ export const PROBLEM_OPTIONS: { code: string; label: string }[] = [
   { code: "8", label: "अन्य" },
 ];
 
+/** Dakshina menu — WhatsApp ₹101/₹151, phone ₹201. */
+export const SERVICE_PACKAGES: ServicePackage[] = [
+  {
+    code: "1",
+    kind: "whatsapp",
+    priceInr: 101,
+    pricePaise: 10100,
+    label: "WhatsApp परामर्श (लिखित रिपोर्ट व उपाय) — ₹101",
+    shortLabel: "WhatsApp परामर्श ₹101",
+  },
+  {
+    code: "2",
+    kind: "whatsapp",
+    priceInr: 151,
+    pricePaise: 15100,
+    label: "WhatsApp परामर्श (लिखित रिपोर्ट व उपाय) — ₹151",
+    shortLabel: "WhatsApp परामर्श ₹151",
+  },
+  {
+    code: "3",
+    kind: "phone",
+    priceInr: 201,
+    pricePaise: 20100,
+    label: "फोन कॉल परामर्श (15 मिनट सीधी चर्चा) — ₹201",
+    shortLabel: "फोन कॉल परामर्श ₹201",
+  },
+];
+
 const DIVIDER = "━━━━━━━━━━━━━━━";
 
 export function welcomeMessage(): string {
   return [
-    "🌿 🙏 नमस्ते एवं आपका हार्दिक स्वागत है।",
+    "🙏 नमस्ते बेटा। आपका स्वागत है।",
     "",
-    "मैं आपका धन्यवाद करता हूँ कि आपने संपर्क किया।",
-    "",
-    "📝 कृपया सबसे पहले अपना पूरा नाम लिखकर भेजें।",
-  ].join("\n");
-}
-
-export function askProblemMessage(name: string): string {
-  const display = name.trim() || "आप";
-  return [
-    `😊 धन्यवाद ${display} जी।`,
-    "",
-    "अब कृपया बताइए कि आपकी सबसे बड़ी समस्या क्या है?",
+    "बताइए, किस विषय को लेकर मन परेशान है?",
     "",
     "1️⃣ 💍 विवाह में देरी",
     "2️⃣ 💼 नौकरी / करियर",
@@ -60,161 +97,117 @@ export function askProblemMessage(name: string): string {
     "7️⃣ 🏡 पारिवारिक तनाव",
     "8️⃣ ✍️ अन्य",
     "",
-    "📩 कृपया केवल नंबर या समस्या का नाम लिखकर भेजें।",
+    "📩 कृपया नंबर या समस्या लिखकर भेजें।",
   ].join("\n");
 }
 
 export function askDurationMessage(): string {
   return [
-    "🙏 धन्यवाद।",
+    "मैं समझ सकता हूँ। ऐसी स्थिति में तनाव होना स्वाभाविक है।",
     "",
-    "📅 यह समस्या आपको कब से महसूस हो रही है?",
+    "एक बात बताइए, यह परेशानी कब से चल रही है?",
   ].join("\n");
 }
 
 export function askPriorAttemptsMessage(): string {
   return [
-    "🤔 क्या आपने इसके लिए पहले कोई प्रयास किया है?",
+    "ठीक है बेटा।",
     "",
-    "यदि हाँ, तो कृपया संक्षेप में बताइए।",
+    "आपने अब तक इसके लिए क्या-क्या प्रयास किए हैं?",
+    "",
+    "कृपया संक्षेप में बताइए।",
   ].join("\n");
 }
 
-export function askBirthDetailsMessage(): string {
+export function askBirthAndQuestionMessage(): string {
   return [
-    "📋 अब कृपया यह जानकारी भेजें:",
+    "ठीक है बेटा। आप अपनी जन्म तिथि, जन्म समय और जन्म स्थान भेज दीजिए।",
+    "",
+    "साथ ही अपना मुख्य सवाल भी लिख दीजिए ताकि मैं उसी पर ध्यान केंद्रित करके मार्गदर्शन तैयार कर सकूँ।",
     "",
     "🎂 जन्म तिथि:",
     "⏰ जन्म समय:",
     "📍 जन्म स्थान:",
+    "❓ मुख्य सवाल:",
   ].join("\n");
 }
 
 export function askMissingBirthFieldsMessage(missingLabels: string[]): string {
-  const emoji: Record<string, string> = {
-    "जन्म तिथि": "🎂",
-    "जन्म समय": "⏰",
-    "जन्म स्थान": "📍",
-    date: "🎂 जन्म तिथि",
-    time: "⏰ जन्म समय",
-    place: "📍 जन्म स्थान",
-  };
-
   const lines = missingLabels.map((label) => {
-    if (label === "date") return "🎂 जन्म तिथि";
-    if (label === "time") return "⏰ जन्म समय";
-    if (label === "place") return "📍 जन्म स्थान";
-    const prefix = emoji[label];
-    if (prefix && prefix.length <= 2) return `${prefix} ${label}`;
-    if (prefix?.includes(" ")) return prefix;
+    if (label === "date" || label === "जन्म तिथि") return "🎂 जन्म तिथि";
+    if (label === "time" || label === "जन्म समय") return "⏰ जन्म समय";
+    if (label === "place" || label === "जन्म स्थान") return "📍 जन्म स्थान";
     return `• ${label}`;
   });
 
   return [
-    "🙏 धन्यवाद। कुछ जानकारी अभी अधूरी है।",
+    "🙏 धन्यवाद। कुछ जन्म जानकारी अभी अधूरी है।",
     "",
     "कृपया ये भेजें:",
     ...lines,
+    "",
+    "और यदि मुख्य सवाल अभी नहीं लिखा, तो उसे भी साथ लिख दीजिए।",
   ].join("\n");
 }
 
-/** Confirmation + special question (one WhatsApp turn). */
-export function confirmAndAskQuestionMessage(): string {
+export function askQuestionOnlyMessage(): string {
   return [
-    "✅ धन्यवाद।",
+    "जन्म विवरण मिल गया।",
     "",
-    "आपकी जानकारी सफलतापूर्वक प्राप्त हो गई है।",
-    "",
-    "🔍 अब मैं आपके द्वारा दी गई जानकारी के आधार पर व्यक्तिगत अध्ययन करूँगा।",
-    "",
-    DIVIDER,
-    "",
-    "❓ क्या आपके मन में कोई विशेष प्रश्न है?",
-    "",
-    "उदाहरण:",
-    "",
-    "💼 करियर से जुड़ा प्रश्न",
-    "💍 विवाह से जुड़ा प्रश्न",
-    "💰 आर्थिक स्थिति",
-    "🏠 परिवार",
-    "❤️ प्रेम संबंध",
-    "",
-    "📩 अपना प्रश्न लिखकर भेजें।",
+    "❓ अब अपना मुख्य सवाल लिखकर भेज दीजिए —",
+    "उदाहरण: क्या मुझे नौकरी मिलेगी? आर्थिक स्थिति कब बेहतर होगी?",
   ].join("\n");
 }
 
-/** Package + fee + ask हाँ (one WhatsApp turn). */
-export function packageFeeAndAskHaanMessage(priceInrFormatted: string): string {
+/** Thanks + features + dakshina menu (one turn). */
+export function featuresAndPackageMenuMessage(): string {
   return [
-    "📝 धन्यवाद।",
+    "धन्यवाद। जानकारी मिल गई।",
     "",
-    "आपके सभी प्रश्न नोट कर लिए गए हैं।",
-    "",
-    "मैं इन्हें व्यक्तिगत विश्लेषण में शामिल करूँगा।",
+    "मैं आपकी कुंडली का गहराई से अध्ययन करूँगा।",
     "",
     DIVIDER,
     "",
-    "📦 व्यक्तिगत परामर्श में आपको मिलेगा:",
+    "इस परामर्श में आपको निम्नलिखित जानकारियाँ दी जाएँगी:",
     "",
-    "✅ व्यक्तिगत कुंडली विश्लेषण",
-    "✅ आपके प्रश्नों के उत्तर",
-    "✅ लिखित मार्गदर्शन",
-    "✅ आवश्यक होने पर फॉलो-अप प्रश्नों के उत्तर",
-    "",
-    DIVIDER,
-    "",
-    `💎 यदि आप यह व्यक्तिगत परामर्श प्राप्त करना चाहते हैं, तो इसकी परामर्श फीस ${priceInrFormatted} है।`,
-    "",
-    "💳 भुगतान प्राप्त होने के बाद आपका विश्लेषण तैयार करने की प्रक्रिया शुरू की जाएगी।",
+    "✅ आपकी जन्म कुंडली का विस्तार से अध्ययन",
+    "✅ आपके द्वारा पूछे गए सभी प्रश्नों के साफ़ और सरल लिखित उत्तर",
+    "✅ नौकरी और धन आगमन के सबसे सटीक समय की जानकारी",
+    "✅ स्थिति सुधारने के लिए आसान और अचूक वैदिक उपाय",
+    "✅ रिपोर्ट पढ़ने के बाद कोई शंका होने पर एक फॉलो-अप चैट सहायता",
     "",
     DIVIDER,
     "",
-    '🙏 यदि आप तैयार हैं, तो कृपया "हाँ" लिखकर भेजें।',
+    "आपकी कुंडली का विस्तार से अध्ययन करने और मार्गदर्शन तैयार करने के लिए हमारी एक छोटी सी सेवा दक्षिणा रहती है।",
     "",
-    "मैं तुरंत भुगतान की प्रक्रिया शुरू कर दूँगा।",
+    "आप अपनी सुविधा अनुसार नीचे दिए गए विकल्पों में से चुनाव कर सकते हैं:",
+    "",
+    "🌿 1️⃣ WhatsApp परामर्श (लिखित रिपोर्ट व उपाय) — ₹101",
+    "🌿 2️⃣ WhatsApp परामर्श (लिखित रिपोर्ट व उपाय) — ₹151",
+    "📞 3️⃣ फोन कॉल परामर्श (15 मिनट सीधी चर्चा) — ₹201",
+    "",
+    "📩 कृपया केवल 1, 2 या 3 लिखकर भेजें।",
   ].join("\n");
 }
 
-export function reAskHaanMessage(): string {
+export function reAskPackageMessage(): string {
   return [
-    '🙏 जब आप तैयार हों, कृपया "हाँ" लिखकर भेजें।',
+    "🙏 कृपया दक्षिणा का विकल्प चुनें:",
     "",
-    "इसके बाद मैं भुगतान की प्रक्रिया शुरू कर दूँगा।",
+    "1️⃣ WhatsApp — ₹101",
+    "2️⃣ WhatsApp — ₹151",
+    "3️⃣ फोन कॉल — ₹201",
+    "",
+    "केवल नंबर लिखकर भेजें।",
   ].join("\n");
 }
 
-export function reAskNameMessage(): string {
-  return "📝 कृपया अपना पूरा नाम लिखकर भेजें।";
-}
-
-export function parseClientName(text: string): string | null {
-  let cleaned = text
-    .trim()
-    .replace(/^\[फोटो\]\s*/u, "")
-    .replace(/^मेरा\s*(पूरा\s*)?नाम\s*(है|:)?\s*/iu, "")
-    .replace(/^मेरा\s*नाम\s*/iu, "")
-    .replace(/^नाम\s*(है|:)?\s*/iu, "")
-    .replace(/^i\s*am\s+/i, "")
-    .replace(/^my\s*name\s*(is|:)?\s*/i, "")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  // Take first line only
-  cleaned = cleaned.split(/\n/)[0]?.trim() ?? "";
-  if (cleaned.length < 2 || cleaned.length > 60) return null;
-
-  // Pure greetings / numbers are not names
-  if (isLikelyGreetingOnly(cleaned)) return null;
-  if (/^[\d०-९]+$/.test(cleaned)) return null;
-
-  return cleaned;
-}
-
-export function isLikelyGreetingOnly(text: string): boolean {
-  const t = text.trim();
-  return /^(hi+|hello|hey|namaste|namaskar|नमस्ते|नमस्कार|प्रणाम|राधे\s*राधे|जय\s*श्री\s*राम|good\s*morning|good\s*evening|hii+|hlw|helo)[\s!.।]*$/iu.test(
-    t,
-  );
+export function paymentAckBeforePayNow(pkg: ServicePackage): string {
+  return [
+    `ठीक है बेटा। आपने ${pkg.shortLabel} चुना है।`,
+    "",
+    "मैं तुरंत भुगतान की प्रक्रिया शुरू कर रहा हूँ — नीचे Pay Now दबाकर दक्षिणा पूर्ण करें।",
+  ].join("\n");
 }
 
 export function parseProblemChoice(text: string): {
@@ -224,8 +217,9 @@ export function parseProblemChoice(text: string): {
   const raw = text.trim();
   if (!raw) return null;
 
-  // Digit 1–8 (Latin or Devanagari), optional emoji/punctuation
-  const digitMatch = raw.match(/^[\s]*(?:option\s*)?([1-8१-८])(?:[\s).:\-_]|$)/iu);
+  const digitMatch = raw.match(
+    /^[\s]*(?:option\s*)?([1-8१-८])(?:[\s).:\-_…]|$)/iu,
+  );
   if (digitMatch) {
     const map: Record<string, string> = {
       "१": "1",
@@ -242,12 +236,11 @@ export function parseProblemChoice(text: string): {
     if (opt) return opt;
   }
 
-  const lower = raw.toLowerCase();
   const byKeyword: { re: RegExp; code: string }[] = [
     { re: /विवाह|शादी|marriage|vivah|shaadi/i, code: "1" },
     { re: /नौकरी|करियर|job|career|naukri/i, code: "2" },
     { re: /व्यवसाय|बिज़नेस|business|vyapar|व्यापार/i, code: "3" },
-    { re: /आर्थिक|कर्ज|पैसे|money|debt|loan|paise|arthik/i, code: "4" },
+    { re: /आर्थिक|कर्ज|पैसे|पैसा|money|debt|loan|paise|arthik/i, code: "4" },
     { re: /प्रेम|लव|girlfriend|boyfriend|love|prem/i, code: "5" },
     { re: /स्वास्थ्य|सेहत|health|bimari|बीमारी/i, code: "6" },
     { re: /परिवार|family|ghar|घर\s*का/i, code: "7" },
@@ -255,32 +248,90 @@ export function parseProblemChoice(text: string): {
   ];
 
   for (const { re, code } of byKeyword) {
-    if (re.test(lower) || re.test(raw)) {
+    if (re.test(raw)) {
       const opt = PROBLEM_OPTIONS.find((o) => o.code === code);
-      if (opt) return { code: opt.code, label: opt.label };
+      if (opt) {
+        // Prefer their wording when free-text is longer than the label
+        if (raw.length > opt.label.length + 5) {
+          return { code: opt.code, label: raw.slice(0, 120) };
+        }
+        return opt;
+      }
     }
   }
 
-  // Free text → treat as "अन्य" with their wording
-  if (raw.length >= 2 && raw.length <= 120) {
-    return { code: "8", label: raw.slice(0, 80) };
+  if (raw.length >= 2 && raw.length <= 200) {
+    return { code: "8", label: raw.slice(0, 120) };
   }
 
   return null;
 }
 
-export function isAffirmativeReady(text: string): boolean {
-  const t = text.trim();
-  if (
-    /^(हाँ|हां|हा|haan|haa?n?|yes|yep|ok|okay|ठीक|तैयार|ready|bilkul|बिल्कुल)([\s!.।]*)$/iu.test(
-      t,
-    )
-  ) {
-    return true;
+export function parsePackageChoice(text: string): ServicePackage | null {
+  const raw = text.trim();
+  if (!raw) return null;
+
+  const digitMatch = raw.match(
+    /^[\s]*(?:option\s*)?([1-3१-३])(?:[\s).:\-_…]|$)/iu,
+  );
+  if (digitMatch) {
+    const map: Record<string, string> = { "१": "1", "२": "2", "३": "3" };
+    const code = map[digitMatch[1]] ?? digitMatch[1];
+    return SERVICE_PACKAGES.find((p) => p.code === code) ?? null;
   }
-  // Soft: starts with हाँ / yes
-  if (/^(हाँ|हां|haan|yes)\b/iu.test(t)) return true;
-  return false;
+
+  // Amount hints
+  if (/101|१०१/.test(raw) && /whats?app|व्हाट्स|लिखित|रिपोर्ट/i.test(raw)) {
+    return SERVICE_PACKAGES[0];
+  }
+  if (/151|१५१/.test(raw) && /whats?app|व्हाट्स|लिखित|रिपोर्ट/i.test(raw)) {
+    return SERVICE_PACKAGES[1];
+  }
+  if (/201|२०१/.test(raw) || /फोन|phone|कॉल|call/i.test(raw)) {
+    return SERVICE_PACKAGES[2];
+  }
+  if (/101|१०१/.test(raw)) return SERVICE_PACKAGES[0];
+  if (/151|१५१/.test(raw)) return SERVICE_PACKAGES[1];
+
+  if (/whats?app|व्हाट्स|लिखित/i.test(raw) && !/151|१५१/.test(raw)) {
+    return SERVICE_PACKAGES[0];
+  }
+
+  return null;
+}
+
+/** Pull a question line from a combined birth+question message. */
+export function extractSpecialQuestion(text: string): string | undefined {
+  const cleaned = text.trim();
+  if (!cleaned) return undefined;
+
+  const labeled = cleaned.match(
+    /(?:मुख्य\s*सवाल|सवाल|प्रश्न|question)\s*[:\-–]?\s*(.+)$/imu,
+  );
+  if (labeled?.[1]?.trim()) {
+    return labeled[1].trim().slice(0, 500);
+  }
+
+  if (/[?？]|क्या\s|कब\s|कैसे\s|milegi|hogi|होगी|मिलेगी/i.test(cleaned)) {
+    // Prefer last sentence-looking chunk
+    const parts = cleaned
+      .split(/[\n।]/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+    const q = parts.find((p) =>
+      /[?？]|क्या\s|कब\s|कैसे\s|milegi|hogi|होगी|मिलेगी/i.test(p),
+    );
+    if (q && q.length >= 8) return q.slice(0, 500);
+  }
+
+  return undefined;
+}
+
+export function isLikelyGreetingOnly(text: string): boolean {
+  const t = text.trim();
+  return /^(hi+|hello|hey|namaste|namaskar|नमस्ते|नमस्कार|प्रणाम|राधे\s*राधे|जय\s*श्री\s*राम|पंडित\s*जी|good\s*morning|good\s*evening|hii+|hlw|helo)[\s!.।🙏]*$/iu.test(
+    t,
+  );
 }
 
 /** Format intake profile for later paid AI context. */
@@ -299,5 +350,20 @@ export function formatIntakeProfileForAi(profile: IntakeProfile): string {
   if (profile.specialQuestion) {
     lines.push(`विशेष प्रश्न: ${profile.specialQuestion}`);
   }
+  if (profile.selectedPriceInr) {
+    lines.push(
+      `पैकेज: ${profile.selectedPackageKind ?? "whatsapp"} — ₹${profile.selectedPriceInr}`,
+    );
+  }
   return lines.join("\n");
+}
+
+/** Normalize legacy steps onto the current machine. */
+export function normalizeIntakeStep(step: IntakeStep | null): IntakeStep {
+  if (!step || step === "awaiting_name") return "awaiting_problem";
+  if (step === "awaiting_birth_details" || step === "awaiting_question") {
+    return "awaiting_birth_and_question";
+  }
+  if (step === "awaiting_haan") return "awaiting_package_choice";
+  return step;
 }

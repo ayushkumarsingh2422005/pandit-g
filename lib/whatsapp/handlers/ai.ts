@@ -70,10 +70,31 @@ function usePaymentLink(): boolean {
   return isRazorpayConfigured();
 }
 
+async function sendNativePayNowSafe(
+  phone: string,
+  contactName: string | undefined,
+  bodyText: string,
+  options?: { amountPaise?: number; itemName?: string; forceNew?: boolean },
+) {
+  try {
+    await sendConsultationPayNow({
+      phone,
+      contactName,
+      bodyText: bodyText.slice(0, 1024),
+      amountPaise: options?.amountPaise,
+      itemName: options?.itemName,
+      forceNew: options?.forceNew,
+    });
+  } catch (error) {
+    console.error("[whatsapp pay now]", error);
+  }
+}
+
 async function resolvePaymentUrl(
   phone: string,
   contactName: string | undefined,
   existingUrl?: string,
+  amountPaise?: number,
 ): Promise<string | undefined> {
   if (!usePaymentLink()) return undefined;
   if (existingUrl && !existingUrl.startsWith("whatsapp:pay:")) {
@@ -82,27 +103,15 @@ async function resolvePaymentUrl(
   if (!isRazorpayConfigured()) return undefined;
 
   try {
-    const link = await getOrCreateConsultationPaymentLink(phone, contactName);
+    const link = await getOrCreateConsultationPaymentLink(
+      phone,
+      contactName,
+      amountPaise,
+    );
     return link.shortUrl;
   } catch (error) {
     console.error("[payment link]", error);
     return undefined;
-  }
-}
-
-async function sendNativePayNowSafe(
-  phone: string,
-  contactName: string | undefined,
-  bodyText: string,
-) {
-  try {
-    await sendConsultationPayNow({
-      phone,
-      contactName,
-      bodyText: bodyText.slice(0, 1024),
-    });
-  } catch (error) {
-    console.error("[whatsapp pay now]", error);
   }
 }
 
@@ -126,6 +135,18 @@ async function handlePaidConsultationGate(
     return;
   }
 
+  const intake = isDbConfigured()
+    ? await getConversationIntakeState(message.from)
+    : null;
+  const selectedPriceInr = intake?.intakeProfile?.selectedPriceInr;
+  const amountPaise =
+    selectedPriceInr && selectedPriceInr > 0
+      ? Math.round(selectedPriceInr * 100)
+      : undefined;
+  const amountInr = selectedPriceInr
+    ? `₹${selectedPriceInr}`
+    : getConsultationPricing().priceInrFormatted;
+
   const pricing = getConsultationPricing();
   const native = useNativePay();
   const paymentUrl = native
@@ -134,6 +155,7 @@ async function handlePaidConsultationGate(
         message.from,
         message.contactName,
         access.pendingPaymentUrl,
+        amountPaise,
       );
 
   let replyType: PaymentReplyType;
@@ -155,7 +177,7 @@ async function handlePaidConsultationGate(
     contactName: message.contactName,
     paymentUrl,
     paymentMode: native ? "native" : "link",
-    amountInr: pricing.priceInrFormatted,
+    amountInr,
     sessionMinutes: pricing.sessionMinutes,
   });
 
@@ -175,17 +197,30 @@ async function handlePaidConsultationGate(
       message.from,
       message.contactName,
       "नीचे Review and pay दबाकर दक्षिणा पूर्ण करें।",
+      { amountPaise, forceNew: Boolean(amountPaise) },
     );
   }
 }
 
-async function sendPaymentOfferAfterIntake(message: IncomingAiMessage) {
-  const pricing = getConsultationPricing();
+async function sendPaymentOfferAfterIntake(
+  message: IncomingAiMessage,
+  selected: {
+    priceInr: number;
+    pricePaise: number;
+    shortLabel: string;
+    kind: string;
+  },
+) {
   const native = useNativePay();
+  const priceFormatted = `₹${selected.priceInr}`;
+  const itemName =
+    selected.kind === "phone"
+      ? "फोन कॉल परामर्श (15 मिनट)"
+      : selected.shortLabel;
 
   if (native) {
     const bodyText =
-      `गहन परामर्श के लिए ${pricing.priceInrFormatted} — ${pricing.sessionMinutes} मिनट WhatsApp बातचीत। ` +
+      `${selected.shortLabel} — दक्षिणा ${priceFormatted}। ` +
       `नीचे Review and pay दबाकर दक्षिणा पूर्ण करें।`;
 
     await saveConversationTurn(
@@ -201,6 +236,11 @@ async function sendPaymentOfferAfterIntake(message: IncomingAiMessage) {
       message.from,
       message.contactName,
       bodyText,
+      {
+        amountPaise: selected.pricePaise,
+        itemName,
+        forceNew: true,
+      },
     );
     return;
   }
@@ -208,6 +248,8 @@ async function sendPaymentOfferAfterIntake(message: IncomingAiMessage) {
   const paymentUrl = await resolvePaymentUrl(
     message.from,
     message.contactName,
+    undefined,
+    selected.pricePaise,
   );
 
   const { text: paymentOffer } = await generatePaymentReplyDetailed({
@@ -217,8 +259,8 @@ async function sendPaymentOfferAfterIntake(message: IncomingAiMessage) {
     contactName: message.contactName,
     paymentUrl,
     paymentMode: "link",
-    amountInr: pricing.priceInrFormatted,
-    sessionMinutes: pricing.sessionMinutes,
+    amountInr: priceFormatted,
+    sessionMinutes: selected.kind === "phone" ? 15 : getConsultationPricing().sessionMinutes,
   });
 
   await saveConversationTurn(
@@ -269,8 +311,8 @@ async function handleScriptedIntake(
     return;
   }
 
-  // Legacy awaiting_details without intakeStep → collect name next
-  const step = intake.intakeStep ?? "awaiting_name";
+  // Legacy awaiting_details without intakeStep → problem menu
+  const step = intake.intakeStep ?? "awaiting_problem";
 
   const result = await advanceScriptedIntake({
     step,
@@ -297,7 +339,7 @@ async function handleScriptedIntake(
     await replyAsHuman(message, result.reply, startedAt, {
       waitUntilSent: true,
     });
-    await sendPaymentOfferAfterIntake(message);
+    await sendPaymentOfferAfterIntake(message, result.selectedPackage);
     return;
   }
 
