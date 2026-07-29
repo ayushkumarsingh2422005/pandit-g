@@ -1,6 +1,7 @@
 /**
- * Client chat flow (pages 1–3) — menu-driven until Pay Now.
+ * Client intake flow — menu-driven until Pay Now.
  * Pandit: देवदत्त जोशी, लखनऊ.
+ * WhatsApp: *bold* + contextual emoji on Hindi lines.
  */
 
 export type IntakeStep =
@@ -8,9 +9,10 @@ export type IntakeStep =
   | "awaiting_problem_detail"
   | "awaiting_duration"
   | "awaiting_prior_attempts"
+  | "awaiting_prior_attempt_detail"
   | "awaiting_birth"
   | "awaiting_consult_choice"
-  /** @deprecated legacy aliases — normalized away */
+  /** @deprecated legacy */
   | "awaiting_name"
   | "awaiting_birth_details"
   | "awaiting_birth_and_question"
@@ -21,10 +23,15 @@ export type IntakeStep =
 export type ServicePackageKind = "whatsapp" | "phone";
 
 export type ProblemCode =
-  | "love"
-  | "finance"
-  | "borrow"
+  | "marriage_delay"
+  | "marriage"
+  | "job"
   | "business"
+  | "love"
+  | "health"
+  | "family"
+  | "restless"
+  | "children"
   | "other";
 
 export type ServicePackage = {
@@ -34,7 +41,6 @@ export type ServicePackage = {
   pricePaise: number;
   label: string;
   shortLabel: string;
-  /** Button title on benefits screen (≤20 chars). */
   payButtonTitle: string;
 };
 
@@ -58,22 +64,22 @@ export const PROBLEM_OPTIONS: {
   description: string;
 }[] = [
   {
-    code: "love",
-    label: "Love / प्रेम",
-    listTitle: "Love / प्रेम",
-    description: "❤️ प्रेम संबंध",
+    code: "marriage_delay",
+    label: "विवाह में देरी",
+    listTitle: "विवाह में देरी",
+    description: "💍 शादी में देरी",
   },
   {
-    code: "finance",
-    label: "Finance / आर्थिक",
-    listTitle: "Finance / आर्थिक",
-    description: "💰 धन / आर्थिक स्थिति",
+    code: "marriage",
+    label: "शादी / विवाह संबंधी",
+    listTitle: "शादी / विवाह",
+    description: "💒 विवाह संबंधी समस्या",
   },
   {
-    code: "borrow",
-    label: "Borrow / कर्ज",
-    listTitle: "Borrow / कर्ज",
-    description: "📉 उधार / कर्ज",
+    code: "job",
+    label: "Job / नौकरी",
+    listTitle: "Job / नौकरी",
+    description: "💼 करियर / नौकरी",
   },
   {
     code: "business",
@@ -82,14 +88,37 @@ export const PROBLEM_OPTIONS: {
     description: "📈 व्यापार / बिज़नेस",
   },
   {
-    code: "other",
-    label: "अन्य",
-    listTitle: "अन्य",
-    description: "✍️ कोई और समस्या",
+    code: "love",
+    label: "Love / प्रेम",
+    listTitle: "Love / प्रेम",
+    description: "❤️ प्रेम संबंध",
+  },
+  {
+    code: "health",
+    label: "सेहत संबंधी",
+    listTitle: "सेहत संबंधी",
+    description: "🏥 स्वास्थ्य चिंता",
+  },
+  {
+    code: "family",
+    label: "पारिवारिक तनाव",
+    listTitle: "पारिवारिक तनाव",
+    description: "🏡 घर / परिवार",
+  },
+  {
+    code: "restless",
+    label: "अशांत / बेचैन मन",
+    listTitle: "अशांत / बेचैन मन",
+    description: "😮‍💨 मन की बेचैनी",
+  },
+  {
+    code: "children",
+    label: "संतान Problem",
+    listTitle: "संतान Problem",
+    description: "👶 संतान संबंधी",
   },
 ];
 
-/** Page 3 — only WhatsApp ₹101 and Call ₹201. */
 export const SERVICE_PACKAGES: ServicePackage[] = [
   {
     code: "a",
@@ -111,7 +140,6 @@ export const SERVICE_PACKAGES: ServicePackage[] = [
   },
 ];
 
-/** WhatsApp interactive payload attached to an intake reply. */
 export type IntakeInteractive =
   | {
       type: "list";
@@ -132,15 +160,24 @@ export type IntakeInteractive =
       buttons: { id: string; title: string }[];
     };
 
+/** Bold a WhatsApp phrase. */
+export function b(text: string): string {
+  return `*${text}*`;
+}
+
+export function panditBlessingMessage(): string {
+  return `🙏 ${b("पंडित जी की भगवान का आशीर्वाद आप पर बना रहे।")}`;
+}
+
 export function welcomeMessage(): string {
   return [
-    "नमस्कार। मैं पंडित देवदत्त जोशी, लखनऊ से।",
+    `🙏 ${b("नमस्कार।")} मैं ${b("पंडित देवदत्त जोशी")}, लखनऊ से।`,
     "",
-    "आपकी क्या मदद कर सकता हूँ?",
+    `🤝 आपकी क्या मदद कर सकता हूँ?`,
     "",
-    "नीचे कुछ विकल्प दिए हुए हैं — उसमें से कोई विकल्प choose कीजिए जो आपकी समस्या हो।",
+    `📋 नीचे कुछ विकल्प दिए हैं — ${b("विकल्प देखें")} दबाकर अपनी समस्या चुनिए।`,
     "",
-    "अगर कोई अन्य समस्या है तो लिखकर भेज दीजिए।",
+    `✍️ अगर कोई अन्य समस्या है तो लिखकर भेज दीजिए।`,
   ].join("\n");
 }
 
@@ -163,70 +200,107 @@ export function welcomeInteractive(): IntakeInteractive {
   };
 }
 
-/** Category-specific follow-up (page 1–2). */
 export function askProblemDetailMessage(code: ProblemCode | string): string {
   switch (code) {
-    case "love":
+    case "marriage_delay":
       return [
-        "ठीक है।",
+        `🙂 ${b("ठीक है।")}`,
         "",
-        "प्रेम संबंध में क्या परेशानी है? कृपया थोड़ा विस्तार से बताइए।",
+        `💍 विवाह में देरी को लेकर क्या चल रहा है? थोड़ा विस्तार से बताइए।`,
       ].join("\n");
-    case "finance":
+    case "marriage":
       return [
-        "ठीक है।",
+        `🙂 ${b("ठीक है।")}`,
         "",
-        "आर्थिक समस्या क्या है — आय, खर्च या धन की कमी? विस्तार से बताइए।",
+        `💒 शादी / विवाह संबंधी क्या समस्या है? कृपया बताइए।`,
       ].join("\n");
-    case "borrow":
+    case "job":
       return [
-        "ठीक है।",
+        `🙂 ${b("ठीक है।")}`,
         "",
-        "कर्ज / उधार की समस्या क्या है? कितना कर्ज है और किससे जुड़ी है — बताइए।",
+        `💼 Job / नौकरी में क्या दिक्कत है? विस्तार से लिखिए।`,
       ].join("\n");
     case "business":
       return [
-        "ठीक है।",
+        `🙂 ${b("ठीक है।")}`,
         "",
-        "आपका कौन सा Business है और Business में क्या समस्या चल रही है?",
+        `📈 आपका कौन सा ${b("Business")} है और Business में क्या समस्या चल रही है?`,
+      ].join("\n");
+    case "love":
+      return [
+        `🙂 ${b("ठीक है।")}`,
+        "",
+        `❤️ प्रेम संबंध में क्या परेशानी है? कृपया थोड़ा विस्तार से बताइए।`,
+      ].join("\n");
+    case "health":
+      return [
+        `🙂 ${b("ठीक है।")}`,
+        "",
+        `🏥 सेहत संबंधी क्या चिंता है? संक्षेप में बताइए।`,
+      ].join("\n");
+    case "family":
+      return [
+        `🙂 ${b("ठीक है।")}`,
+        "",
+        `🏡 पारिवारिक तनाव किस बात को लेकर है? बताइए।`,
+      ].join("\n");
+    case "restless":
+      return [
+        `🙂 ${b("ठीक है।")}`,
+        "",
+        `😮‍💨 अशांत / बेचैन मन की समस्या कैसी महसूस होती है? बताइए।`,
+      ].join("\n");
+    case "children":
+      return [
+        `🙂 ${b("ठीक है।")}`,
+        "",
+        `👶 संतान संबंधी क्या समस्या है? कृपया बताइए।`,
       ].join("\n");
     case "other":
     default:
       return [
-        "ठीक है।",
+        `🙂 ${b("ठीक है।")}`,
         "",
-        "आपकी अन्य समस्या क्या है, बताइए।",
+        `✍️ आपकी अन्य समस्या क्या है, बताइए।`,
       ].join("\n");
   }
 }
 
 export function askDurationMessage(): string {
   return [
-    "ठीक है। मैं समझ गया।",
+    `🙂 ${b("ठीक है।")} मैं समझ गया।`,
     "",
-    "यह समस्या आपकी कब से चल रही है?",
+    `📅 यह समस्या आपकी ${b("कब से")} चल रही है?`,
   ].join("\n");
 }
 
 export function askPriorAttemptsMessage(): string {
   return [
-    "ठीक है। मैं समझ गया।",
+    `🙂 ${b("ठीक है।")} मैं समझ गया।`,
     "",
-    "इस समस्या से निकलने के लिए आपने कोई कोशिश की है?",
+    `🤔 इस समस्या से निकलने के लिए आपने कोई कोशिश की है?`,
     "",
-    "यदि हाँ, तो संक्षेप में बताइए।",
+    `📩 ${b("हाँ")} या ${b("नहीं")} लिखकर भेजिए।`,
+  ].join("\n");
+}
+
+export function askPriorAttemptDetailMessage(): string {
+  return [
+    `🙏 ${b("ठीक है।")}`,
+    "",
+    `📝 तो आपने इस समस्या से निकलने के लिए ${b("क्या कोशिश")} की, बताइए।`,
   ].join("\n");
 }
 
 export function askBirthMessage(): string {
   return [
-    "ठीक है।",
+    `🙂 ${b("ठीक है।")}`,
     "",
-    "आपकी यह समस्या को देखने के लिए, और इस समस्या से निकलने के लिए आपकी जन्म तिथि चाहिए — स्थान और समय के साथ।",
+    `🔮 समस्या देखने और इससे निकलने का मार्ग निकालने के लिए आपकी ${b("जन्म तिथि")} चाहिए — ${b("स्थान")} और ${b("समय")} के साथ।`,
     "",
-    "🎂 जन्म तिथि:",
-    "⏰ जन्म समय:",
-    "📍 जन्म स्थान:",
+    `🎂 जन्म तिथि:`,
+    `⏰ जन्म समय:`,
+    `📍 जन्म स्थान:`,
   ].join("\n");
 }
 
@@ -239,36 +313,60 @@ export function askMissingBirthFieldsMessage(missingLabels: string[]): string {
   });
 
   return [
-    "🙏 धन्यवाद। कुछ जन्म जानकारी अभी अधूरी है।",
+    `🙏 ${b("धन्यवाद।")} कुछ जन्म जानकारी अभी अधूरी है।`,
     "",
-    "कृपया ये भेजें:",
+    `📋 कृपया ये भेजें:`,
     ...lines,
   ].join("\n");
 }
 
-/** Page 3 — personal consultation pitch + A/B. */
-export function consultChoiceMessage(): string {
+/** Short box 1 — kundli need (not one giant message). */
+export function consultKundliMessage(): string {
   return [
-    "जैसे ही आपकी जन्म जानकारी मिली —",
+    `🔮 ${b("जन्म जानकारी मिल गई।")}`,
     "",
-    "चूँकि आपकी इस समस्या से निकलने के लिए मुझे आपकी कुंडली देखनी पड़ेगी।",
-    "कुंडली देखकर यह पता लगाना पड़ेगा कि आप इस समस्या से कैसे बाहर आएँगे।",
+    `📜 इस समस्या से निकलने के लिए मुझे आपकी ${b("कुंडली")} देखनी पड़ेगी।`,
     "",
-    "चूँकि कुंडली देखकर समस्या का निवारण निकालना यह Personal परामर्श में आता है।",
-    "",
-    "तो आप हमसे अपनी समस्या के निवारण के लिए दो तरीके से जुड़ सकते हैं:",
-    "",
-    "(A) WhatsApp पर परामर्श — शुल्क ₹101",
-    "(B) सीधा पंडित जी से Call पर बात — शुल्क ₹201",
-    "",
-    "अब आप अपनी सुविधा के अनुसार कोई भी परामर्श चुन सकते हैं।",
+    `🧭 कुंडली देखकर पता चलेगा कि आप इस समस्या से कैसे बाहर आ सकते हैं।`,
   ].join("\n");
+}
+
+/** Short box 2 — what consultation includes. */
+export function consultIncludesMessage(): string {
+  return [
+    `📦 ${b("परामर्श में आपको मिलेगा:")}`,
+    "",
+    `✅ आपकी समस्या का ${b("main कारण")}`,
+    `✅ समस्या से आप बाहर कैसे आएँगे — उसके ${b("उपाय")}`,
+    `✅ भविष्य में आप आगे कैसे बढ़ेंगे — उसके ${b("उपाय")}`,
+    `✅ कुंडली देखकर सारी समस्या का ${b("निवारण")}`,
+    `✅ सटीक ${b("ज्योतिषीय उपाय")}`,
+    `✅ आपके सारे सवालों का ${b("जवाब")}`,
+  ].join("\n");
+}
+
+/** Short box 3 — choose A/B (interactive body kept short). */
+export function consultChoiceShortMessage(): string {
+  return [
+    `💎 कुंडली देखकर निवारण ${b("Personal परामर्श")} में आता है।`,
+    "",
+    `🤝 दो तरीके से जुड़ सकते हैं:`,
+    "",
+    `🌿 (A) WhatsApp परामर्श — ${b("₹101")}`,
+    `📞 (B) Call पर बात — ${b("₹201")}`,
+    "",
+    `👇 अपनी सुविधा से विकल्प चुनें।`,
+  ].join("\n");
+}
+
+export function consultChoiceMessages(): string[] {
+  return [consultKundliMessage(), consultIncludesMessage()];
 }
 
 export function consultChoiceInteractive(): IntakeInteractive {
   return {
     type: "buttons",
-    body: consultChoiceMessage(),
+    body: consultChoiceShortMessage(),
     footer: "व्यक्तिगत परामर्श",
     buttons: [
       { id: "pkg_a", title: "WhatsApp ₹101" },
@@ -279,10 +377,10 @@ export function consultChoiceInteractive(): IntakeInteractive {
 
 export function reAskConsultChoiceMessage(): string {
   return [
-    "🙏 कृपया परामर्श का विकल्प चुनें:",
+    `🙏 कृपया परामर्श चुनें:`,
     "",
-    "(A) WhatsApp — ₹101",
-    "(B) Call — ₹201",
+    `🌿 (A) WhatsApp — ${b("₹101")}`,
+    `📞 (B) Call — ${b("₹201")}`,
   ].join("\n");
 }
 
@@ -297,29 +395,37 @@ export function reAskConsultChoiceInteractive(): IntakeInteractive {
   };
 }
 
-/** Benefits after choosing A (WhatsApp ₹101). */
 export function whatsappBenefitsMessage(): string {
   return [
-    "आपने WhatsApp परामर्श (₹101) चुना है। इसमें आपको मिलेगा:",
+    `🌿 आपने ${b("WhatsApp परामर्श (₹101)")} चुना है।`,
     "",
-    "✅ आपकी कुंडली देखकर व्यक्तिगत मार्गदर्शन",
-    "✅ आपके सभी सवालों के लिखित जवाब",
-    "✅ ज़रूरत पड़ने पर कोई सवाल हो तो पूछ सकते हैं",
+    `📦 ${b("परामर्श में आपको मिलेगा:")}`,
+    `✅ समस्या का main कारण`,
+    `✅ बाहर आने के उपाय`,
+    `✅ भविष्य में आगे बढ़ने के उपाय`,
+    `✅ कुंडली से निवारण`,
+    `✅ सटीक ज्योतिषीय उपाय`,
+    `✅ आपके सारे सवालों का जवाब`,
     "",
-    "नीचे Pay Now दबाकर दक्षिणा पूर्ण करें।",
+    `💳 नीचे ${b("Pay Now")} दबाकर दक्षिणा पूर्ण करें।`,
+    "",
+    panditBlessingMessage(),
   ].join("\n");
 }
 
-/** Benefits after choosing B (Call ₹201). */
 export function callBenefitsMessage(): string {
   return [
-    "आपने Call परामर्श (₹201) चुना है। इसमें आपको मिलेगा:",
+    `📞 आपने ${b("Call परामर्श (₹201)")} चुना है।`,
     "",
-    "✅ पंडित जी से 15 मिनट सीधे बात करने का अवसर",
-    "✅ अपने सभी सवाल सीधे पूछ सकते हैं",
-    "✅ कुंडली के आधार पर व्यक्तिगत मार्गदर्शन",
+    `📦 ${b("परामर्श में आपको मिलेगा:")}`,
+    `✅ पंडित जी से ${b("15 मिनट")} सीधी बात`,
+    `✅ अपने सभी सवाल सीधे पूछ सकते हैं`,
+    `✅ कुंडली के आधार पर व्यक्तिगत मार्गदर्शन`,
+    `✅ सटीक ज्योतिषीय उपाय`,
     "",
-    "नीचे Pay Now दबाकर दक्षिणा पूर्ण करें।",
+    `💳 नीचे ${b("Pay Now")} दबाकर दक्षिणा पूर्ण करें।`,
+    "",
+    panditBlessingMessage(),
   ].join("\n");
 }
 
@@ -329,6 +435,18 @@ export function benefitsBeforePayNow(pkg: ServicePackage): string {
     : whatsappBenefitsMessage();
 }
 
+export function isAffirmativeYes(text: string): boolean {
+  const t = text.trim();
+  return /^(हाँ|हां|हा|haan|haa?n?|yes|yep|y|ji\s*haan|जी\s*हाँ|बिल्कुल|bilkul)([\s!.।]*)$/iu.test(
+    t,
+  );
+}
+
+export function isNegativeNo(text: string): boolean {
+  const t = text.trim();
+  return /^(नहीं|नही|ना|no|nahi|nahīn|nope|न)([\s!.।]*)$/iu.test(t);
+}
+
 export function parseProblemChoice(text: string): {
   code: ProblemCode;
   label: string;
@@ -336,44 +454,53 @@ export function parseProblemChoice(text: string): {
   const raw = text.trim();
   if (!raw) return null;
 
-  const listId = raw.match(/^problem_(love|finance|borrow|business|other)$/i);
+  const listId = raw.match(
+    /^problem_(marriage_delay|marriage|job|business|love|health|family|restless|children|other)$/i,
+  );
   if (listId) {
     const code = listId[1].toLowerCase() as ProblemCode;
     const opt = PROBLEM_OPTIONS.find((o) => o.code === code);
     if (opt) return { code: opt.code, label: opt.label };
   }
 
-  // Legacy numeric ids from old 8-option menu → map roughly
-  const legacy = raw.match(/^problem_([1-8])$/i);
-  if (legacy) {
+  // Legacy short codes
+  const legacyShort = raw.match(
+    /^problem_(love|finance|borrow|business|other)$/i,
+  );
+  if (legacyShort) {
     const map: Record<string, ProblemCode> = {
-      "1": "love",
-      "2": "finance",
-      "3": "business",
-      "4": "borrow",
-      "5": "love",
-      "6": "other",
-      "7": "other",
-      "8": "other",
+      love: "love",
+      finance: "job",
+      borrow: "job",
+      business: "business",
+      other: "restless",
     };
-    const code = map[legacy[1]] ?? "other";
+    const code = map[legacyShort[1].toLowerCase()] ?? "restless";
     const opt = PROBLEM_OPTIONS.find((o) => o.code === code)!;
     return { code: opt.code, label: opt.label };
   }
 
-  const digitMatch = raw.match(/^[\s]*([1-5१-५])(?:[\s).:\-_…]|$)/u);
+  const digitMatch = raw.match(/^[\s]*([1-9१-९])(?:[\s).:\-_…]|$)/u);
   if (digitMatch) {
     const map: Record<string, ProblemCode> = {
-      "1": "love",
-      "2": "finance",
-      "3": "borrow",
+      "1": "marriage_delay",
+      "2": "marriage",
+      "3": "job",
       "4": "business",
-      "5": "other",
-      "१": "love",
-      "२": "finance",
-      "३": "borrow",
+      "5": "love",
+      "6": "health",
+      "7": "family",
+      "8": "restless",
+      "9": "children",
+      "१": "marriage_delay",
+      "२": "marriage",
+      "३": "job",
       "४": "business",
-      "५": "other",
+      "५": "love",
+      "६": "health",
+      "७": "family",
+      "८": "restless",
+      "९": "children",
     };
     const code = map[digitMatch[1]];
     if (code) {
@@ -383,31 +510,25 @@ export function parseProblemChoice(text: string): {
   }
 
   const byKeyword: { re: RegExp; code: ProblemCode }[] = [
-    { re: /love|प्रेम|प्रेम\s*संबंध|girlfriend|boyfriend|शादी|विवाह/i, code: "love" },
-    {
-      re: /finance|आर्थिक|पैसे|पैसा|धन|money|income/i,
-      code: "finance",
-    },
-    { re: /borrow|कर्ज|उधार|debt|loan|udhaar/i, code: "borrow" },
-    {
-      re: /business|व्यवसाय|बिज़नेस|व्यापार|vyapar/i,
-      code: "business",
-    },
-    { re: /अन्य|other|कुछ\s*और/i, code: "other" },
+    { re: /विवाह\s*में\s*देरी|शादी\s*में\s*देरी|delay.*marriage/i, code: "marriage_delay" },
+    { re: /शादी|विवाह|marriage|vivah|shaadi/i, code: "marriage" },
+    { re: /\bjob\b|नौकरी|करियर|career|naukri/i, code: "job" },
+    { re: /business|व्यवसाय|बिज़नेस|व्यापार/i, code: "business" },
+    { re: /love|प्रेम|girlfriend|boyfriend/i, code: "love" },
+    { re: /सेहत|स्वास्थ्य|health|बीमारी/i, code: "health" },
+    { re: /परिवार|family|पारिवारिक/i, code: "family" },
+    { re: /अशांत|बेचैन|restless|tension|मन/i, code: "restless" },
+    { re: /संतान|children|child|baby|औलाद/i, code: "children" },
   ];
 
   for (const { re, code } of byKeyword) {
     if (re.test(raw)) {
       const opt = PROBLEM_OPTIONS.find((o) => o.code === code)!;
-      // Long free-text concern → other with their words
-      if (raw.length > 40 && code !== "other") {
-        return { code, label: raw.slice(0, 120) };
-      }
+      if (raw.length > 40) return { code, label: raw.slice(0, 120) };
       return { code: opt.code, label: opt.label };
     }
   }
 
-  // Free text on welcome = other problem written directly
   if (raw.length >= 2 && raw.length <= 300 && !/^problem_/i.test(raw)) {
     return { code: "other", label: raw.slice(0, 120) };
   }
@@ -415,18 +536,17 @@ export function parseProblemChoice(text: string): {
   return null;
 }
 
-/**
- * True when user typed their problem on the welcome screen
- * (skip "what is your other problem?").
- */
 export function isFreeTextProblemOnWelcome(text: string): boolean {
   const raw = text.trim();
   if (raw.length < 8) return false;
   if (/^problem_/i.test(raw)) return false;
-  if (/^[\s]*[1-5१-५](?:[\s).:\-_…]|$)/u.test(raw)) return false;
+  if (/^[\s]*[1-9१-९](?:[\s).:\-_…]|$)/u.test(raw)) return false;
   if (isLikelyGreetingOnly(raw)) return false;
-  // Pure category word only — not enough detail
-  if (/^(love|finance|borrow|business|अन्य|other|प्रेम|आर्थिक|कर्ज|व्यवसाय)[\s!.।]*$/iu.test(raw)) {
+  if (
+    /^(love|job|business|finance|अन्य|other|प्रेम|नौकरी|सेहत|परिवार|संतान)[\s!.।]*$/iu.test(
+      raw,
+    )
+  ) {
     return false;
   }
   return true;

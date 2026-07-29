@@ -96,13 +96,27 @@ async function sendIntakeReply(
   reply: string,
   interactive: IntakeInteractive | undefined,
   generationStartedAt?: number,
-  options?: { waitUntilSent?: boolean },
+  options?: { waitUntilSent?: boolean; preReplies?: string[] },
 ) {
+  const pre = options?.preReplies ?? [];
+  for (let i = 0; i < pre.length; i++) {
+    await replyAsHuman(message, pre[i], i === 0 ? generationStartedAt : undefined, {
+      waitUntilSent: true,
+    });
+    if (i < pre.length - 1) await sleep(400);
+  }
+
   if (interactive) {
-    await replyWithInteractive(message, interactive, generationStartedAt);
+    await replyWithInteractive(
+      message,
+      interactive,
+      pre.length ? undefined : generationStartedAt,
+    );
     return;
   }
-  await replyAsHuman(message, reply, generationStartedAt, options);
+  await replyAsHuman(message, reply, pre.length ? undefined : generationStartedAt, {
+    waitUntilSent: options?.waitUntilSent,
+  });
 }
 
 function buildStoredUserMessage(text: string, hasImage: boolean): string {
@@ -225,8 +239,11 @@ async function handlePaidConsultationGate(
     replyType = "claimed_paid_pending";
   } else if (access.reason === "expired") {
     replyType = "expired";
-  } else if (stage === "reading_delivered" || isPaymentIntent(message.text)) {
+  } else if (isPaymentIntent(message.text)) {
     replyType = "offer";
+  } else if (stage === "reading_delivered") {
+    // Already sent Pay Now after package choice — don't spam another offer
+    replyType = "unpaid";
   } else {
     replyType = "unpaid";
   }
@@ -254,7 +271,8 @@ async function handlePaidConsultationGate(
     waitUntilSent: offerPayment && native,
   });
 
-  if (offerPayment && native) {
+  // Only re-send Pay Now when user clearly asks to pay again
+  if (offerPayment && native && isPaymentIntent(message.text)) {
     await sendNativePayNowSafe(
       message.from,
       message.contactName,
@@ -375,6 +393,7 @@ async function handleScriptedIntake(
       start.reply,
       start.interactive,
       startedAt,
+      { preReplies: start.preReplies },
     );
     return;
   }
@@ -423,6 +442,7 @@ async function handleScriptedIntake(
     result.reply,
     result.interactive,
     startedAt,
+    { preReplies: result.preReplies },
   );
 }
 

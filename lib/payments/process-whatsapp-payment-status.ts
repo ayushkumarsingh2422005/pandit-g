@@ -21,7 +21,13 @@ import {
 import type { WhatsAppStatusUpdate } from "@/lib/whatsapp/types";
 
 export function paymentSuccessMessage(): string {
-  return `दक्षिणा प्राप्त हुई। अब जो भी दिल पर लगा हो वो लिखिए — सुनकर आगे बात करते हैं।`;
+  return [
+    `🙏 *दक्षिणा प्राप्त हुई।*`,
+    "",
+    `✍️ अब जो भी दिल पर लगा हो वो लिखिए — सुनकर आगे बात करते हैं।`,
+    "",
+    `🙏 *पंडित जी की भगवान का आशीर्वाद आप पर बना रहे।*`,
+  ].join("\n");
 }
 
 function isSuccessfulWebhook(statusUpdate: WhatsAppStatusUpdate): boolean {

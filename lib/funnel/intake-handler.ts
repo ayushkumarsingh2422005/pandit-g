@@ -6,14 +6,18 @@ import {
   askBirthMessage,
   askDurationMessage,
   askMissingBirthFieldsMessage,
+  askPriorAttemptDetailMessage,
   askPriorAttemptsMessage,
   askProblemDetailMessage,
   benefitsBeforePayNow,
   consultChoiceInteractive,
-  consultChoiceMessage,
+  consultChoiceMessages,
+  consultChoiceShortMessage,
   formatIntakeProfileForAi,
+  isAffirmativeYes,
   isFreeTextProblemOnWelcome,
   isLikelyGreetingOnly,
+  isNegativeNo,
   normalizeIntakeStep,
   parsePackageChoice,
   parseProblemChoice,
@@ -40,6 +44,8 @@ export type IntakeHandlerResult =
   | {
       kind: "reply";
       reply: string;
+      /** Extra short WhatsApp texts sent before main reply / interactive. */
+      preReplies?: string[];
       funnelStage: "awaiting_details";
       intakeStep: IntakeStep;
       intakeProfile: IntakeProfile;
@@ -67,10 +73,12 @@ function replyResult(
   intakeStep: IntakeStep,
   profile: IntakeProfile,
   interactive?: IntakeInteractive,
+  preReplies?: string[],
 ): Extract<IntakeHandlerResult, { kind: "reply" }> {
   return {
     kind: "reply",
     reply,
+    preReplies,
     funnelStage: "awaiting_details",
     intakeStep,
     intakeProfile: profile,
@@ -79,10 +87,6 @@ function replyResult(
   };
 }
 
-/**
- * Scripted intake per client pages 1–3.
- * Interactive until consult choice → Pay Now.
- */
 export async function advanceScriptedIntake(input: {
   step: IntakeStep | null;
   profile: IntakeProfile;
@@ -94,7 +98,6 @@ export async function advanceScriptedIntake(input: {
   const profile: IntakeProfile = { ...input.profile };
   const text = trimUserText(input.userText);
 
-  // ── Page 1: problem category ──────────────────────────────────────
   if (step === "awaiting_problem") {
     if (isLikelyGreetingOnly(text)) {
       return replyResult(
@@ -105,7 +108,6 @@ export async function advanceScriptedIntake(input: {
       );
     }
 
-    // User wrote their problem instead of picking a menu row
     if (isFreeTextProblemOnWelcome(text)) {
       profile.problemCode = "other";
       profile.problem = "अन्य";
@@ -127,7 +129,6 @@ export async function advanceScriptedIntake(input: {
     profile.problem = problem.label;
     profile.problemCode = problem.code;
 
-    // Free-text that mapped to a category with long label = detail already given
     if (
       problem.code === "other" &&
       problem.label.length > 20 &&
@@ -145,7 +146,6 @@ export async function advanceScriptedIntake(input: {
     );
   }
 
-  // ── Category follow-up detail ─────────────────────────────────────
   if (step === "awaiting_problem_detail") {
     if (!text || text.length < 2) {
       return replyResult(
@@ -161,7 +161,6 @@ export async function advanceScriptedIntake(input: {
     return replyResult(askDurationMessage(), "awaiting_duration", profile);
   }
 
-  // ── Duration ──────────────────────────────────────────────────────
   if (step === "awaiting_duration") {
     if (!text) {
       return replyResult(askDurationMessage(), "awaiting_duration", profile);
@@ -174,13 +173,36 @@ export async function advanceScriptedIntake(input: {
     );
   }
 
-  // ── Prior attempts ────────────────────────────────────────────────
+  // हाँ → क्या कोशिश?  |  नहीं → DOB  |  detail text → DOB
   if (step === "awaiting_prior_attempts") {
-    profile.priorAttempts = text ? text.slice(0, 400) : "नहीं बताया";
+    if (isAffirmativeYes(text)) {
+      return replyResult(
+        askPriorAttemptDetailMessage(),
+        "awaiting_prior_attempt_detail",
+        profile,
+      );
+    }
+    if (isNegativeNo(text) || !text) {
+      profile.priorAttempts = "नहीं";
+      return replyResult(askBirthMessage(), "awaiting_birth", profile);
+    }
+    // Already described efforts in one message
+    profile.priorAttempts = text.slice(0, 400);
     return replyResult(askBirthMessage(), "awaiting_birth", profile);
   }
 
-  // ── Birth details ─────────────────────────────────────────────────
+  if (step === "awaiting_prior_attempt_detail") {
+    if (!text || text.length < 2) {
+      return replyResult(
+        askPriorAttemptDetailMessage(),
+        "awaiting_prior_attempt_detail",
+        profile,
+      );
+    }
+    profile.priorAttempts = text.slice(0, 400);
+    return replyResult(askBirthMessage(), "awaiting_birth", profile);
+  }
+
   if (step === "awaiting_birth") {
     let missing = missingBirthFields(
       input.history,
@@ -220,16 +242,16 @@ export async function advanceScriptedIntake(input: {
       );
     }
 
-    // Page 3 — personal consultation A/B
+    // 2–3 short boxes: kundli + includes, then A/B buttons
     return replyResult(
-      consultChoiceMessage(),
+      consultChoiceShortMessage(),
       "awaiting_consult_choice",
       profile,
       consultChoiceInteractive(),
+      consultChoiceMessages(),
     );
   }
 
-  // ── Consult choice A/B → benefits + Pay Now ───────────────────────
   const pkg = parsePackageChoice(text);
   if (!pkg) {
     return replyResult(
@@ -274,10 +296,14 @@ export async function persistIntakeReply(input: {
   contactName?: string;
   result: Extract<IntakeHandlerResult, { kind: "reply" }>;
 }) {
+  const storedReply = input.result.preReplies?.length
+    ? [...input.result.preReplies, input.reply].join("\n\n———\n\n")
+    : input.reply;
+
   await saveConversationTurn(
     input.phone,
     input.userMessage,
-    input.reply,
+    storedReply,
     input.contactName,
     input.result.funnelStage,
     {
