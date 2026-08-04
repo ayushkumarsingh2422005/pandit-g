@@ -55,6 +55,8 @@ export type IntakeProfile = {
   selectedPackageCode?: string;
   selectedPackageKind?: ServicePackageKind;
   selectedPriceInr?: number;
+  /** After pay — wait for payment screenshot before full consultation. */
+  awaitingPaymentScreenshot?: boolean;
 };
 
 export const PROBLEM_OPTIONS: {
@@ -268,7 +270,7 @@ export function askProblemDetailMessage(code: ProblemCode | string): string {
 
 export function askDurationMessage(): string {
   return [
-    `🙂 ${b("ठीक है।")} मैं समझ गया।`,
+    `🙂 ${b("ठीक है।")}`,
     "",
     `📅 यह समस्या आपकी ${b("कब से")} चल रही है?`,
   ].join("\n");
@@ -276,12 +278,23 @@ export function askDurationMessage(): string {
 
 export function askPriorAttemptsMessage(): string {
   return [
-    `🙂 ${b("ठीक है।")} मैं समझ गया।`,
+    `🙂 ${b("ठीक है।")}`,
     "",
     `🤔 इस समस्या से निकलने के लिए आपने कोई कोशिश की है?`,
     "",
-    `📩 ${b("हाँ")} या ${b("नहीं")} लिखकर भेजिए।`,
+    `👇 नीचे से ${b("हाँ")} या ${b("नहीं")} चुन सकते हैं।`,
   ].join("\n");
+}
+
+export function askPriorAttemptsInteractive(): IntakeInteractive {
+  return {
+    type: "buttons",
+    body: askPriorAttemptsMessage(),
+    buttons: [
+      { id: "prior_yes", title: "हाँ" },
+      { id: "prior_no", title: "नहीं" },
+    ],
+  };
 }
 
 export function askPriorAttemptDetailMessage(): string {
@@ -348,12 +361,12 @@ export function consultIncludesMessage(): string {
 /** Short box 3 — choose A/B (interactive body kept short). */
 export function consultChoiceShortMessage(): string {
   return [
-    `💎 कुंडली देखकर निवारण ${b("Personal परामर्श")} में आता है।`,
+    `💎 कुंडली देखना ${b("Personal परामर्श")} में आता है।`,
     "",
-    `🤝 दो तरीके से जुड़ सकते हैं:`,
+    `🤝 दो तरीके से समस्या का निवारण:`,
     "",
-    `🌿 (A) WhatsApp परामर्श — ${b("₹101")}`,
-    `📞 (B) Call पर बात — ${b("₹201")}`,
+    `🌿 (A) WhatsApp में ${b("₹101")} परामर्श शुल्क भेजकर — WhatsApp पर निवारण`,
+    `📞 (B) सीधे Call पर ${b("15 मिनट")} बातचीत और मार्गदर्शन — ${b("₹201")}`,
     "",
     `👇 अपनी सुविधा से विकल्प चुनें।`,
   ].join("\n");
@@ -377,11 +390,35 @@ export function consultChoiceInteractive(): IntakeInteractive {
 
 export function reAskConsultChoiceMessage(): string {
   return [
-    `🙏 कृपया परामर्श चुनें:`,
+    `🙏 कृपया Personal परामर्श चुनें:`,
     "",
     `🌿 (A) WhatsApp — ${b("₹101")}`,
-    `📞 (B) Call — ${b("₹201")}`,
+    `📞 (B) Call 15 मिनट — ${b("₹201")}`,
   ].join("\n");
+}
+
+/** When customer asks how to pay — show options immediately (no UPI). */
+export function paymentHowMessage(): string {
+  return [
+    `💳 भुगतान के लिए ये विकल्प हैं:`,
+    "",
+    `🌿 (A) WhatsApp परामर्श — ${b("₹101")}`,
+    `📞 (B) Call परामर्श (15 मिनट) — ${b("₹201")}`,
+    "",
+    `👇 विकल्प चुनने के बाद ${b("Pay Now / परामर्श शुल्क भेजें")} से दक्षिणा पूर्ण करें।`,
+  ].join("\n");
+}
+
+export function paymentHowInteractive(): IntakeInteractive {
+  return {
+    type: "buttons",
+    body: paymentHowMessage(),
+    footer: "सुरक्षित भुगतान",
+    buttons: [
+      { id: "pkg_a", title: "WhatsApp ₹101" },
+      { id: "pkg_b", title: "Call ₹201" },
+    ],
+  };
 }
 
 export function reAskConsultChoiceInteractive(): IntakeInteractive {
@@ -399,15 +436,16 @@ export function whatsappBenefitsMessage(): string {
   return [
     `🌿 आपने ${b("WhatsApp परामर्श (₹101)")} चुना है।`,
     "",
-    `📦 ${b("परामर्श में आपको मिलेगा:")}`,
-    `✅ समस्या का main कारण`,
-    `✅ बाहर आने के उपाय`,
-    `✅ भविष्य में आगे बढ़ने के उपाय`,
-    `✅ कुंडली से निवारण`,
+    `📦 ${b("Benefits — WhatsApp परामर्श:")}`,
+    `✅ आपके जो भी सवाल पूछे हैं — उनका ${b("लिखित")} उत्तर`,
+    `✅ कुंडली के आधार पर आपका मार्गदर्शन`,
+    `✅ आपकी समस्या का ${b("मुख्य कारण")}`,
+    `✅ इस समस्या से आप कैसे बाहर आएंगे — उसके उपाय`,
+    `✅ भविष्य में आप आगे कैसे बढ़ेंगे — उसके उपाय`,
     `✅ सटीक ज्योतिषीय उपाय`,
-    `✅ आपके सारे सवालों का जवाब`,
+    `✅ आपके सवालों का जवाब`,
     "",
-    `💳 नीचे ${b("Pay Now")} दबाकर दक्षिणा पूर्ण करें।`,
+    `💳 नीचे ${b("Pay Now / परामर्श शुल्क भेजें")} दबाकर दक्षिणा पूर्ण करें।`,
     "",
     panditBlessingMessage(),
   ].join("\n");
@@ -417,15 +455,40 @@ export function callBenefitsMessage(): string {
   return [
     `📞 आपने ${b("Call परामर्श (₹201)")} चुना है।`,
     "",
-    `📦 ${b("परामर्श में आपको मिलेगा:")}`,
-    `✅ पंडित जी से ${b("15 मिनट")} सीधी बात`,
-    `✅ अपने सभी सवाल सीधे पूछ सकते हैं`,
-    `✅ कुंडली के आधार पर व्यक्तिगत मार्गदर्शन`,
-    `✅ सटीक ज्योतिषीय उपाय`,
+    `📦 ${b("Benefits — Call परामर्श:")}`,
+    `✅ आपके कुंडली के अनुसार आपकी समस्या का उपाय`,
+    `✅ पंडित जी से सीधा ${b("15 मिनट")} की बातचीत`,
+    `✅ जीवन में आगे बढ़ने के लिए कुंडली के अनुसार उपाय`,
     "",
-    `💳 नीचे ${b("Pay Now")} दबाकर दक्षिणा पूर्ण करें।`,
+    `💳 नीचे ${b("Pay Now / परामर्श शुल्क भेजें")} दबाकर दक्षिणा पूर्ण करें।`,
     "",
     panditBlessingMessage(),
+  ].join("\n");
+}
+
+export function askPaymentScreenshotMessage(): string {
+  return [
+    `🙏 ${b("दक्षिणा प्राप्त हुई।")}`,
+    "",
+    `📸 कृपया भुगतान का ${b("स्क्रीनशॉट")} भेज दीजिए — उसके बाद परामर्श शुरू करेंगे।`,
+    "",
+    panditBlessingMessage(),
+  ].join("\n");
+}
+
+export function screenshotReceivedMessage(): string {
+  return [
+    `🙏 ${b("स्क्रीनशॉट मिल गया।")} धन्यवाद।`,
+    "",
+    `✍️ अब जो भी दिल पर लगा हो वो लिखिए — सुनकर आगे बात करते हैं।`,
+    "",
+    panditBlessingMessage(),
+  ].join("\n");
+}
+
+export function remindPaymentScreenshotMessage(): string {
+  return [
+    `📸 परामर्श शुरू करने से पहले कृपया भुगतान का ${b("स्क्रीनशॉट")} भेज दीजिए।`,
   ].join("\n");
 }
 
@@ -536,12 +599,20 @@ export function parseProblemChoice(text: string): {
   return null;
 }
 
+/** User picked "other" but has not described the problem yet. */
+export function isVagueOtherOnly(text: string): boolean {
+  return /^(अन्य(\s*समस्या)?|other(\s*problem)?|कोई\s*और(\s*समस्या)?|something\s*else)[\s!.।]*$/iu.test(
+    text.trim(),
+  );
+}
+
 export function isFreeTextProblemOnWelcome(text: string): boolean {
   const raw = text.trim();
   if (raw.length < 8) return false;
   if (/^problem_/i.test(raw)) return false;
   if (/^[\s]*[1-9१-९](?:[\s).:\-_…]|$)/u.test(raw)) return false;
   if (isLikelyGreetingOnly(raw)) return false;
+  if (isVagueOtherOnly(raw)) return false;
   if (
     /^(love|job|business|finance|अन्य|other|प्रेम|नौकरी|सेहत|परिवार|संतान)[\s!.।]*$/iu.test(
       raw,
@@ -550,6 +621,24 @@ export function isFreeTextProblemOnWelcome(text: string): boolean {
     return false;
   }
   return true;
+}
+
+export function isPriorYes(text: string): boolean {
+  return /^prior_yes$/i.test(text.trim()) || isAffirmativeYes(text);
+}
+
+export function isPriorNo(text: string): boolean {
+  return /^prior_no$/i.test(text.trim()) || isNegativeNo(text);
+}
+
+/** Simple key to detect duplicate bot replies. */
+export function replyDedupeKey(text: string): string {
+  return text
+    .replace(/\*+/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 280)
+    .toLowerCase();
 }
 
 export function parsePackageChoice(text: string): ServicePackage | null {

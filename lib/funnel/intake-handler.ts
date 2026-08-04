@@ -7,6 +7,7 @@ import {
   askDurationMessage,
   askMissingBirthFieldsMessage,
   askPriorAttemptDetailMessage,
+  askPriorAttemptsInteractive,
   askPriorAttemptsMessage,
   askProblemDetailMessage,
   benefitsBeforePayNow,
@@ -14,15 +15,19 @@ import {
   consultChoiceMessages,
   consultChoiceShortMessage,
   formatIntakeProfileForAi,
-  isAffirmativeYes,
   isFreeTextProblemOnWelcome,
   isLikelyGreetingOnly,
-  isNegativeNo,
+  isPriorNo,
+  isPriorYes,
+  isVagueOtherOnly,
   normalizeIntakeStep,
   parsePackageChoice,
   parseProblemChoice,
+  paymentHowInteractive,
+  paymentHowMessage,
   reAskConsultChoiceInteractive,
   reAskConsultChoiceMessage,
+  replyDedupeKey,
   welcomeInteractive,
   welcomeMessage,
   type IntakeInteractive,
@@ -39,6 +44,12 @@ import {
   extractBirthDetailsUniversally,
   universalMissingFields,
 } from "@/lib/funnel/extract-birth-details-ai";
+import {
+  isObjectionRelevantStep,
+  isPaymentHowQuestion,
+  matchObjection,
+  SHOW_PAYMENT_OPTIONS,
+} from "@/lib/funnel/objection-replies";
 
 export type IntakeHandlerResult =
   | {
@@ -51,6 +62,8 @@ export type IntakeHandlerResult =
       intakeProfile: IntakeProfile;
       clientName?: string;
       interactive?: IntakeInteractive;
+      /** Skip WhatsApp send — same message as last bot reply. */
+      skipSend?: boolean;
     }
   | {
       kind: "ready_for_payment";
@@ -68,13 +81,28 @@ function trimUserText(text: string): string {
     .trim();
 }
 
+function lastAssistantContent(history: StoredChatMessage[]): string | null {
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].role === "assistant") return history[i].content;
+  }
+  return null;
+}
+
 function replyResult(
   reply: string,
   intakeStep: IntakeStep,
   profile: IntakeProfile,
   interactive?: IntakeInteractive,
   preReplies?: string[],
+  options?: { history?: StoredChatMessage[] },
 ): Extract<IntakeHandlerResult, { kind: "reply" }> {
+  const last = options?.history
+    ? lastAssistantContent(options.history)
+    : null;
+  const skipSend = Boolean(
+    last && replyDedupeKey(last) === replyDedupeKey(reply) && !interactive,
+  );
+
   return {
     kind: "reply",
     reply,
@@ -84,7 +112,15 @@ function replyResult(
     intakeProfile: profile,
     clientName: profile.clientName,
     interactive,
+    skipSend,
   };
+}
+
+function withFlowReturn(
+  objectionReply: string,
+  continueHint: string,
+): string {
+  return `${objectionReply}\n\n———\n\n${continueHint}`;
 }
 
 export async function advanceScriptedIntake(input: {
@@ -97,6 +133,7 @@ export async function advanceScriptedIntake(input: {
   const step = normalizeIntakeStep(input.step);
   const profile: IntakeProfile = { ...input.profile };
   const text = trimUserText(input.userText);
+  const hist = { history: input.history };
 
   if (step === "awaiting_problem") {
     if (isLikelyGreetingOnly(text)) {
@@ -105,6 +142,21 @@ export async function advanceScriptedIntake(input: {
         "awaiting_problem",
         profile,
         welcomeInteractive(),
+        undefined,
+        hist,
+      );
+    }
+
+    if (isVagueOtherOnly(text)) {
+      profile.problemCode = "other";
+      profile.problem = "अन्य";
+      return replyResult(
+        askProblemDetailMessage("other"),
+        "awaiting_problem_detail",
+        profile,
+        undefined,
+        undefined,
+        hist,
       );
     }
 
@@ -113,7 +165,14 @@ export async function advanceScriptedIntake(input: {
       profile.problem = "अन्य";
       profile.problemDetail = text.slice(0, 400);
       profile.specialQuestion = profile.problemDetail;
-      return replyResult(askDurationMessage(), "awaiting_duration", profile);
+      return replyResult(
+        askDurationMessage(),
+        "awaiting_duration",
+        profile,
+        undefined,
+        undefined,
+        hist,
+      );
     }
 
     const problem = parseProblemChoice(text);
@@ -123,72 +182,135 @@ export async function advanceScriptedIntake(input: {
         "awaiting_problem",
         profile,
         welcomeInteractive(),
+        undefined,
+        hist,
       );
     }
 
     profile.problem = problem.label;
     profile.problemCode = problem.code;
 
+    // "अन्य" / vague — ask what the problem is first (never "समझ गया")
     if (
       problem.code === "other" &&
-      problem.label.length > 20 &&
-      !/^(अन्य|other)$/i.test(problem.label)
+      (isVagueOtherOnly(problem.label) ||
+        problem.label.length <= 20 ||
+        /^(अन्य|other)/i.test(problem.label))
     ) {
+      profile.problem = "अन्य";
+      return replyResult(
+        askProblemDetailMessage("other"),
+        "awaiting_problem_detail",
+        profile,
+        undefined,
+        undefined,
+        hist,
+      );
+    }
+
+    if (problem.code === "other" && problem.label.length > 20) {
       profile.problemDetail = problem.label;
       profile.specialQuestion = problem.label;
-      return replyResult(askDurationMessage(), "awaiting_duration", profile);
+      return replyResult(
+        askDurationMessage(),
+        "awaiting_duration",
+        profile,
+        undefined,
+        undefined,
+        hist,
+      );
     }
 
     return replyResult(
       askProblemDetailMessage(problem.code),
       "awaiting_problem_detail",
       profile,
+      undefined,
+      undefined,
+      hist,
     );
   }
 
   if (step === "awaiting_problem_detail") {
-    if (!text || text.length < 2) {
+    if (!text || text.length < 2 || isVagueOtherOnly(text)) {
       return replyResult(
         askProblemDetailMessage(
           (profile.problemCode as ProblemCode) || "other",
         ),
         "awaiting_problem_detail",
         profile,
+        undefined,
+        undefined,
+        hist,
       );
     }
     profile.problemDetail = text.slice(0, 400);
     profile.specialQuestion = profile.problemDetail;
-    return replyResult(askDurationMessage(), "awaiting_duration", profile);
+    return replyResult(
+      askDurationMessage(),
+      "awaiting_duration",
+      profile,
+      undefined,
+      undefined,
+      hist,
+    );
   }
 
   if (step === "awaiting_duration") {
     if (!text) {
-      return replyResult(askDurationMessage(), "awaiting_duration", profile);
+      return replyResult(
+        askDurationMessage(),
+        "awaiting_duration",
+        profile,
+        undefined,
+        undefined,
+        hist,
+      );
     }
     profile.duration = text.slice(0, 200);
     return replyResult(
       askPriorAttemptsMessage(),
       "awaiting_prior_attempts",
       profile,
+      askPriorAttemptsInteractive(),
+      undefined,
+      hist,
     );
   }
 
   // हाँ → क्या कोशिश?  |  नहीं → DOB  |  detail text → DOB
   if (step === "awaiting_prior_attempts") {
-    if (isAffirmativeYes(text)) {
+    if (isPriorYes(text)) {
       return replyResult(
         askPriorAttemptDetailMessage(),
         "awaiting_prior_attempt_detail",
         profile,
+        undefined,
+        undefined,
+        hist,
       );
     }
-    if (isNegativeNo(text) || !text) {
+    if (isPriorNo(text) || !text) {
       profile.priorAttempts = "नहीं";
-      return replyResult(askBirthMessage(), "awaiting_birth", profile);
+      return replyResult(
+        askBirthMessage(),
+        "awaiting_birth",
+        profile,
+        undefined,
+        undefined,
+        hist,
+      );
     }
     // Already described efforts in one message
     profile.priorAttempts = text.slice(0, 400);
-    return replyResult(askBirthMessage(), "awaiting_birth", profile);
+    return replyResult(
+      askBirthMessage(),
+      "awaiting_birth",
+      profile,
+      undefined,
+      undefined,
+      hist,
+    );
   }
 
   if (step === "awaiting_prior_attempt_detail") {
@@ -197,10 +319,20 @@ export async function advanceScriptedIntake(input: {
         askPriorAttemptDetailMessage(),
         "awaiting_prior_attempt_detail",
         profile,
+        undefined,
+        undefined,
+        hist,
       );
     }
     profile.priorAttempts = text.slice(0, 400);
-    return replyResult(askBirthMessage(), "awaiting_birth", profile);
+    return replyResult(
+      askBirthMessage(),
+      "awaiting_birth",
+      profile,
+      undefined,
+      undefined,
+      hist,
+    );
   }
 
   if (step === "awaiting_birth") {
@@ -239,17 +371,81 @@ export async function advanceScriptedIntake(input: {
         askMissingBirthFieldsMessage(fields),
         "awaiting_birth",
         profile,
+        undefined,
+        undefined,
+        hist,
       );
     }
 
-    // 2–3 short boxes: kundli + includes, then A/B buttons
     return replyResult(
       consultChoiceShortMessage(),
       "awaiting_consult_choice",
       profile,
       consultChoiceInteractive(),
       consultChoiceMessages(),
+      hist,
     );
+  }
+
+  // Near payment — handle bahane / payment-how, then return to A/B
+  if (isObjectionRelevantStep(step)) {
+    if (isPaymentHowQuestion(text)) {
+      return replyResult(
+        paymentHowMessage(),
+        "awaiting_consult_choice",
+        profile,
+        paymentHowInteractive(),
+        undefined,
+        hist,
+      );
+    }
+
+    const pkgEarly = parsePackageChoice(text);
+    if (!pkgEarly) {
+      const objection = matchObjection(text);
+      if (objection) {
+        if (objection.reply === SHOW_PAYMENT_OPTIONS) {
+          return replyResult(
+            paymentHowMessage(),
+            "awaiting_consult_choice",
+            profile,
+            paymentHowInteractive(),
+            undefined,
+            hist,
+          );
+        }
+        const continueHint = reAskConsultChoiceMessage();
+        return replyResult(
+          withFlowReturn(objection.reply, continueHint),
+          "awaiting_consult_choice",
+          profile,
+          reAskConsultChoiceInteractive(),
+          undefined,
+          hist,
+        );
+      }
+
+      return replyResult(
+        reAskConsultChoiceMessage(),
+        "awaiting_consult_choice",
+        profile,
+        reAskConsultChoiceInteractive(),
+        undefined,
+        hist,
+      );
+    }
+
+    profile.selectedPackageCode = pkgEarly.code;
+    profile.selectedPackageKind = pkgEarly.kind;
+    profile.selectedPriceInr = pkgEarly.priceInr;
+
+    return {
+      kind: "ready_for_payment",
+      reply: benefitsBeforePayNow(pkgEarly),
+      intakeProfile: profile,
+      clientName: profile.clientName,
+      selectedPackage: pkgEarly,
+    };
   }
 
   const pkg = parsePackageChoice(text);
@@ -259,6 +455,8 @@ export async function advanceScriptedIntake(input: {
       "awaiting_consult_choice",
       profile,
       reAskConsultChoiceInteractive(),
+      undefined,
+      hist,
     );
   }
 

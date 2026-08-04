@@ -17,7 +17,17 @@ import {
   persistIntakeReply,
   startScriptedIntake,
 } from "@/lib/funnel/intake-handler";
-import type { IntakeInteractive } from "@/lib/funnel/intake-script";
+import {
+  remindPaymentScreenshotMessage,
+  replyDedupeKey,
+  screenshotReceivedMessage,
+  type IntakeInteractive,
+} from "@/lib/funnel/intake-script";
+import {
+  isPaymentHowQuestion,
+  matchObjection,
+  SHOW_PAYMENT_OPTIONS,
+} from "@/lib/funnel/objection-replies";
 import { resolveFunnelStage } from "@/lib/funnel/state";
 import { getConsultationAccess } from "@/lib/payments/consultation-access";
 import { sendConsultationPayNow } from "@/lib/payments/create-whatsapp-payment";
@@ -187,6 +197,7 @@ async function handlePaidConsultationGate(
   message: IncomingAiMessage,
   storedUserMessage: string,
   stage: "reading_delivered" | "active",
+  hasImage: boolean,
 ) {
   let access = await getConsultationAccess(message.from);
 
@@ -198,7 +209,62 @@ async function handlePaidConsultationGate(
     }
   }
 
+  const intake = isDbConfigured()
+    ? await getConversationIntakeState(message.from)
+    : null;
+
   if (access.hasAccess) {
+    const awaitingShot = Boolean(
+      intake?.intakeProfile?.awaitingPaymentScreenshot,
+    );
+
+    if (awaitingShot) {
+      const startedAt = Date.now();
+      if (hasImage) {
+        const profile = {
+          ...(intake?.intakeProfile ?? {}),
+          awaitingPaymentScreenshot: false,
+        };
+        const reply = screenshotReceivedMessage();
+        await saveConversationTurn(
+          message.from,
+          storedUserMessage,
+          reply,
+          message.contactName,
+          "active",
+          {
+            funnelStage: "active",
+            intakeProfile: profile,
+          },
+        );
+        await replyAsHuman(message, reply, startedAt);
+        return;
+      }
+
+      const remind = remindPaymentScreenshotMessage();
+      const history = isDbConfigured()
+        ? await getConversationHistory(message.from)
+        : [];
+      const lastAssistant = [...history]
+        .reverse()
+        .find((m) => m.role === "assistant");
+      if (
+        lastAssistant &&
+        replyDedupeKey(lastAssistant.content) === replyDedupeKey(remind)
+      ) {
+        return;
+      }
+      await saveConversationTurn(
+        message.from,
+        storedUserMessage,
+        remind,
+        message.contactName,
+        "active",
+      );
+      await replyAsHuman(message, remind, startedAt);
+      return;
+    }
+
     const startedAt = Date.now();
     const reply = await generatePanditGReply({
       phone: message.from,
@@ -211,9 +277,6 @@ async function handlePaidConsultationGate(
     return;
   }
 
-  const intake = isDbConfigured()
-    ? await getConversationIntakeState(message.from)
-    : null;
   const selectedPriceInr = intake?.intakeProfile?.selectedPriceInr;
   const amountPaise =
     selectedPriceInr && selectedPriceInr > 0
@@ -233,6 +296,72 @@ async function handlePaidConsultationGate(
         access.pendingPaymentUrl,
         amountPaise,
       );
+
+  // Payment how / bahanebaji — scripted reply, then gently re-offer Pay Now once
+  if (
+    !userClaimsTheyPaid(message.text) &&
+    access.reason !== "expired"
+  ) {
+    const objection = matchObjection(message.text);
+    const wantsPayHow =
+      isPaymentHowQuestion(message.text) ||
+      objection?.reply === SHOW_PAYMENT_OPTIONS;
+
+    if (wantsPayHow || (objection && objection.reply !== SHOW_PAYMENT_OPTIONS)) {
+      const startedAt = Date.now();
+      const reply =
+        wantsPayHow
+          ? [
+              `💳 भुगतान के लिए नीचे *Pay Now / परामर्श शुल्क भेजें* दबाकर दक्षिणा पूर्ण करें।`,
+              "",
+              `🌿 WhatsApp परामर्श — ₹101`,
+              `📞 Call परामर्श — ₹201`,
+              "",
+              `चुनने के बाद Review and pay से भुगतान करें।`,
+            ].join("\n")
+          : [
+              objection!.reply,
+              "",
+              "———",
+              "",
+              `जब तैयार हों, नीचे Pay Now से दक्षिणा पूर्ण करें — उसके बाद परामर्श शुरू होगा।`,
+            ].join("\n");
+
+      const history = isDbConfigured()
+        ? await getConversationHistory(message.from)
+        : [];
+      const lastAssistant = [...history]
+        .reverse()
+        .find((m) => m.role === "assistant");
+      if (
+        lastAssistant &&
+        replyDedupeKey(lastAssistant.content) === replyDedupeKey(reply)
+      ) {
+        return;
+      }
+
+      await saveConversationTurn(
+        message.from,
+        storedUserMessage,
+        reply,
+        message.contactName,
+        stage,
+      );
+      await replyAsHuman(message, reply, startedAt, {
+        waitUntilSent: wantsPayHow && native,
+      });
+
+      if (wantsPayHow && native) {
+        await sendNativePayNowSafe(
+          message.from,
+          message.contactName,
+          "नीचे Review and pay दबाकर दक्षिणा पूर्ण करें।",
+          { amountPaise, forceNew: Boolean(amountPaise) },
+        );
+      }
+      return;
+    }
+  }
 
   let replyType: PaymentReplyType;
   if (userClaimsTheyPaid(message.text)) {
@@ -259,6 +388,19 @@ async function handlePaidConsultationGate(
     amountInr,
     sessionMinutes: pricing.sessionMinutes,
   });
+
+  const history = isDbConfigured()
+    ? await getConversationHistory(message.from)
+    : [];
+  const lastAssistant = [...history]
+    .reverse()
+    .find((m) => m.role === "assistant");
+  if (
+    lastAssistant &&
+    replyDedupeKey(lastAssistant.content) === replyDedupeKey(reply)
+  ) {
+    return;
+  }
 
   await saveConversationTurn(
     message.from,
@@ -430,6 +572,10 @@ async function handleScriptedIntake(
     return;
   }
 
+  if (result.skipSend) {
+    return;
+  }
+
   await persistIntakeReply({
     phone: message.from,
     userMessage: storedUserMessage,
@@ -476,6 +622,7 @@ export async function handleAiMessage(message: IncomingAiMessage) {
         message,
         storedUserMessage,
         stage as "reading_delivered" | "active",
+        hasImage,
       );
       return;
     }

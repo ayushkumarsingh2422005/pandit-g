@@ -7,27 +7,24 @@ import {
   type PaymentRecord,
 } from "@/lib/db/payments";
 import {
+  getConversationIntakeState,
   saveConversationTurn,
 } from "@/lib/db/conversations";
 import {
   getActiveSession,
   startConsultationSession,
 } from "@/lib/db/sessions";
+import { askPaymentScreenshotMessage, type IntakeProfile } from "@/lib/funnel/intake-script";
 import { sendHumanTextMessage } from "@/lib/whatsapp/human-typing";
 import {
   lookupWhatsAppPayment,
   sendOrderStatusUpdate,
 } from "@/lib/whatsapp/send-order-details";
 import type { WhatsAppStatusUpdate } from "@/lib/whatsapp/types";
+import { isDbConfigured } from "@/lib/db/is-configured";
 
 export function paymentSuccessMessage(): string {
-  return [
-    `🙏 *दक्षिणा प्राप्त हुई।*`,
-    "",
-    `✍️ अब जो भी दिल पर लगा हो वो लिखिए — सुनकर आगे बात करते हैं।`,
-    "",
-    `🙏 *पंडित जी की भगवान का आशीर्वाद आप पर बना रहे।*`,
-  ].join("\n");
+  return askPaymentScreenshotMessage();
 }
 
 function isSuccessfulWebhook(statusUpdate: WhatsAppStatusUpdate): boolean {
@@ -84,12 +81,32 @@ export async function notifyPaymentSuccessOnce(
   const referenceId =
     options?.referenceId ?? paid.referenceId ?? paid.paymentLinkId;
 
+  let intakeProfile: IntakeProfile = {
+    awaitingPaymentScreenshot: true,
+  };
+  if (isDbConfigured()) {
+    try {
+      const intake = await getConversationIntakeState(paid.phone);
+      intakeProfile = {
+        ...intake.intakeProfile,
+        awaitingPaymentScreenshot: true,
+      };
+    } catch {
+      // keep minimal flag
+    }
+  }
+
   await saveConversationTurn(
     paid.phone,
     "[भुगतान सफल — WhatsApp Pay]",
     reply,
     paid.contactName,
     "active",
+    {
+      funnelStage: "active",
+      intakeStep: null,
+      intakeProfile,
+    },
   );
 
   if (referenceId) {
